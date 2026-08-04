@@ -2770,3 +2770,48 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
   .free-quota-tip { flex-direction: column; align-items: stretch; }
   .free-quota-actions { justify-content: flex-start; }
 }
+
+/* ---- 全局搜索：智能解析 ---- */
+.smart-search-toggle {
+  flex: 0 0 auto;
+  padding: 5px 11px;
+  border: 1px solid var(--line-dark);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.smart-search-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--teal-pale);
+  font-weight: 600;
+}
+
+.smart-search-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--teal-pale);
+  font-size: 12.5px;
+}
+.smart-bar-label { color: var(--accent); font-weight: 700; }
+.smart-bar-query {
+  font-family: "Cascadia Code", Consolas, monospace;
+  background: var(--paper-2);
+  border: 1px solid var(--line-dark);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--ink);
+}
+.smart-bar-range { color: var(--ink-2); }
+.smart-bar-actions { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .smart-search-bar { padding: 8px 14px; }
+  .smart-bar-actions { margin-left: 0; }
+}

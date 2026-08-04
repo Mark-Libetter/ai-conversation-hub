@@ -103,7 +103,8 @@
               <option value="qclaw">QClaw</option>
               <option value="qoderwork">QoderWork</option>
             </select>
-            <input id="searchInput" type="search" placeholder='关键词默认 AND；支持 "短语"、OR、NOT 和括号'>
+            <input id="searchInput" type="search" placeholder='自然语言直接搜；也可写 "短语"、OR、NOT、括号'>
+            <button id="smartSearchToggle" class="smart-search-toggle active" type="button" aria-pressed="true" title="智能解析已开启：自然语言自动转布尔检索">智能</button>
             <details class="search-syntax">
               <summary aria-label="搜索语法帮助">语法</summary>
               <div>
@@ -123,6 +124,8 @@
             <button id="themeButton" class="theme-trigger" type="button" aria-haspopup="dialog">换肤</button>
           </div>
         </header>
+
+        <div id="smartSearchBar" class="smart-search-bar" hidden aria-live="polite"></div>
 
         <section id="findView" class="app-view active" aria-label="找对话">
           <div class="find-layout">
