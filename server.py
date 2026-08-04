@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 10
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.18.14"
+APP_VERSION = "0.18.15"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -9375,6 +9375,101 @@ class ConversationIndex:
 INDEX = ConversationIndex()
 CSRF_TOKEN = secrets.token_urlsafe(32)
 
+# 启动预热状态：pending -> running -> done/skipped/error
+# 通过 /api/health 的 warmup 字段对外可见，便于验收与诊断。
+WARMUP_STATE: dict[str, Any] = {
+    "status": "pending",
+    "started_at": 0.0,
+    "finished_at": 0.0,
+    "seconds": 0.0,
+    "parts": {},
+    "errors": [],
+}
+
+
+def startup_warmup() -> None:
+    """后台预热：把前端首屏与首次交互要用的端点提前算好。
+
+    覆盖 boot() 的真实调用链：summary -> conversations -> daily ->
+    sources -> projects -> 各项目详情。全部走既有缓存与锁，
+    与用户首批请求并发安全；任何一步失败只记录、不中断。
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            # BELOW_NORMAL：与用户请求争抢 GIL 时让出优先权，
+            # 避免"点开的项目正好在预热"时请求耗时翻倍。
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 1)
+        except Exception:  # noqa: BLE001 - 降优先级失败不影响预热本身
+            pass
+    WARMUP_STATE["status"] = "running"
+    WARMUP_STATE["started_at"] = time.time()
+    parts: dict[str, float] = {}
+
+    def run(name: str, func: Any) -> None:
+        started = time.time()
+        try:
+            func()
+            parts[name] = round(time.time() - started, 3)
+        except Exception as exc:  # noqa: BLE001 - 预热失败不能影响服务
+            parts[name] = -1.0
+            WARMUP_STATE["errors"].append(f"{name}: {exc}")
+        # 让出片刻，避免预热线程独占 GIL 时把用户首批请求饿死。
+        time.sleep(0.1)
+
+    try:
+        if setup_status().get("required"):
+            WARMUP_STATE["status"] = "skipped"
+            return
+        # 服务启动后数据源常有新增写入；先由预热吸收这次全量刷新，
+        # 别让用户的首开请求撞上后台 refresh 抢占 GIL。
+        run("source_refresh", lambda: INDEX.maybe_refresh(block=True))
+        run("summary", INDEX.summary)
+        run(
+            "conversations",
+            lambda: INDEX.list(
+                source="all",
+                query="",
+                time_range="all",
+                status="all",
+                workspace="all",
+                native_project="all",
+                favorites=False,
+                limit=120,
+                offset=0,
+            ),
+        )
+        run("daily", lambda: INDEX.daily_summary(""))
+        run("sources", INDEX.source_health)
+        # 重计算阶段延后：服务重启后前 15 秒内点开项目走原冷计算（约 3-4 秒），
+        # 避免与预热撞车导致等待翻倍；15 秒后详情缓存就绪，点开即毫秒级。
+        WARMUP_PHASE_DELAY = 15.0
+        time.sleep(WARMUP_PHASE_DELAY)
+        parts["idle_before_projects"] = WARMUP_PHASE_DELAY
+
+        def warm_projects() -> None:
+            payload = INDEX.projects()
+            project_rows = payload.get("projects") or []
+            for position, row in enumerate(project_rows):
+                project_id = str(row.get("id") or "")
+                if project_id:
+                    INDEX.project_detail(project_id)
+                # 项目详情是重计算，逐个之间让出 GIL，给用户请求插队机会。
+                if position < len(project_rows) - 1:
+                    time.sleep(0.25)
+
+        run("projects", warm_projects)
+        WARMUP_STATE["status"] = "done"
+    except Exception as exc:  # noqa: BLE001
+        WARMUP_STATE["status"] = "error"
+        WARMUP_STATE["errors"].append(str(exc))
+    finally:
+        WARMUP_STATE["parts"] = parts
+        WARMUP_STATE["finished_at"] = time.time()
+        WARMUP_STATE["seconds"] = round(WARMUP_STATE["finished_at"] - WARMUP_STATE["started_at"], 2)
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ConversationHub/17"
@@ -9455,6 +9550,12 @@ class Handler(BaseHTTPRequestHandler):
                 "platform": "macos" if sys.platform == "darwin" else ("windows" if os.name == "nt" else "linux"),
                 "setup_required": setup_status()["required"],
                 "data_dir": str(DATA_DIR),
+                "warmup": {
+                    "status": WARMUP_STATE["status"],
+                    "seconds": WARMUP_STATE["seconds"],
+                    "parts": WARMUP_STATE["parts"],
+                    "errors": WARMUP_STATE["errors"],
+                },
             })
             return
         if path == "/api/setup/status":
@@ -9836,6 +9937,8 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
     url = f"http://127.0.0.1:{port}/"
     print(f"AI Conversation Hub {APP_VERSION}: {url}")
     print("Local-only. Press Ctrl+C to stop.")
+    # 首开提速：端口就绪后立即在后台预热首屏端点，与首批请求并发。
+    threading.Thread(target=startup_warmup, name="hub-startup-warmup", daemon=True).start()
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
