@@ -31,6 +31,10 @@
             <span class="nav-icon" aria-hidden="true">▦</span>
             <span class="nav-copy"><span>项目</span><small>演进、版本与待办</small></span>
           </button>
+          <button class="primary-nav-item" data-view="summaries" type="button" title="对话总结">
+            <span class="nav-icon" aria-hidden="true">✎</span>
+            <span class="nav-copy"><span>对话总结</span><small>多选对话的内容分析</small></span>
+          </button>
         </nav>
 
         <div class="source-section">
@@ -178,6 +182,14 @@
                     <span class="muted">按最近活动排列</span>
                     <button id="detailToggleButton" class="button secondary detail-drawer-toggle" type="button"
                       aria-controls="detailPane" aria-expanded="false">打开对话内容</button>
+                  </span>
+                </div>
+                <div id="selectionBar" class="selection-bar" hidden>
+                  <span id="selectionCount">已选 0 个对话</span>
+                  <span class="selection-actions">
+                    <button id="selectAllVisibleButton" class="button ghost" type="button">全选当前结果</button>
+                    <button id="clearSelectionButton" class="button ghost" type="button">清除选择</button>
+                    <button id="generateSummaryButton" class="button primary" type="button">生成对话分析</button>
                   </span>
                 </div>
                 <div id="conversationList" class="conversation-list" aria-live="polite"></div>
@@ -657,6 +669,23 @@
             </section>
           </div>
         </section>
+
+        <section id="summariesView" class="app-view" aria-label="对话总结">
+          <div class="summaries-layout">
+            <aside class="summaries-list-pane">
+              <div class="page-heading">
+                <p class="eyebrow">CONVERSATION ANALYSIS</p>
+                <h2>对话总结</h2>
+                <p>在"找对话"勾选一个或多个对话，用已配置的模型生成内容分析，结果保存在这里。</p>
+              </div>
+              <button id="gotoSelectButton" class="button secondary" type="button">去选择对话</button>
+              <div id="summariesList" class="summaries-list"><span class="muted">正在读取…</span></div>
+            </aside>
+            <main id="summaryContent" class="summary-content">
+              <div class="empty-detail"><div><h2>选择左侧的总结</h2><p>或去"找对话"勾选对话，生成新的内容分析。</p></div></div>
+            </main>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -971,6 +1000,26 @@
         <div id="knowledgeHistoryBody" class="knowledge-history-body">
           <p class="muted">正在读取修订历史…</p>
         </div>
+      </div>
+    </dialog>
+
+    <dialog id="summaryGenDialog" class="settings-dialog summary-gen-dialog" aria-labelledby="summaryGenTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">CONVERSATION ANALYSIS</p><h2 id="summaryGenTitle">生成对话分析</h2></div>
+          <button id="closeSummaryGenButton" class="button ghost" type="button">取消</button>
+        </div>
+        <p class="muted" id="summaryGenMeta">将使用 设置 → 模型摘要 中配置的接口生成。</p>
+        <label><span>分析重点（可选）</span>
+          <textarea id="summaryGenFocus" rows="3" placeholder="例如：只关注方案为什么失败 / 汇总所有待办与决定"></textarea>
+        </label>
+        <label><span>标题（可选）</span>
+          <input id="summaryGenName" type="text" maxlength="60" placeholder="留空则自动生成">
+        </label>
+        <div class="settings-card-actions">
+          <button id="confirmSummaryGenButton" class="button primary" type="button">开始生成</button>
+        </div>
+        <div id="summaryGenState" class="muted"></div>
       </div>
     </dialog>
 

@@ -27,7 +27,7 @@ const EXTRA_SOURCES = ["claude", "codepilot", "cursor", "marvis", "qclaw", "qode
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
-const VALID_VIEWS = new Set(["find", "daily", "project", "skills", "assets", "settings"]);
+const VALID_VIEWS = new Set(["find", "daily", "project", "summaries", "skills", "assets", "settings"]);
 const customSourceIds = new Set();
 
 function registerCustomSources(sources = {}) {
@@ -161,6 +161,9 @@ const state = {
   summaryConfig: null,
   summaryModels: [],
   enabledSources: new Set(),
+  checked: new Map(),
+  summaries: [],
+  currentSummaryId: "",
   projects: [],
   selectedProjectId: "",
   projectData: null,
@@ -1201,6 +1204,9 @@ function setView(view, { sync = true } = {}) {
   }
   if (state.view === "assets") {
     loadAssets().catch((error) => showToast(error.message));
+  }
+  if (state.view === "summaries") {
+    loadSummaries().catch((error) => showToast(error.message));
   }
   if (sync) syncUrl();
 }
@@ -2621,6 +2627,7 @@ function renderList() {
     list.innerHTML = [...groups.entries()].map(([day, items]) => {
       const rows = items.map((item) => {
       const selected = state.selected?.source === item.source && state.selected?.id === item.id;
+      const checked = state.checked.has(`${item.source}:${item.id}`);
       const tags = [
         item.favorite ? "★ 收藏" : "",
         item.user_status ? statusLabel(item.user_status) : statusLabel(item.status),
@@ -2631,8 +2638,9 @@ function renderList() {
         ? `<span class="conversation-match">${highlightHtml(item.match_snippet, state.queryTerms)}</span>`
         : "";
       return `
-        <button class="conversation${selected ? " selected" : ""}" type="button"
+        <button class="conversation${selected ? " selected" : ""}${checked ? " checked" : ""}" type="button"
           data-source="${item.source}" data-id="${escapeHtml(item.id)}">
+          <span class="check-mark" role="checkbox" aria-checked="${checked}" data-check="1">${checked ? "✓" : ""}</span>
           <span class="source-dot ${item.source}"></span>
           <span class="conversation-main">
             <span class="conversation-title">${highlightHtml(item.title, state.queryTerms)}</span>
@@ -4168,8 +4176,235 @@ $("#deleteViewButton").addEventListener("click", () => {
 
 list.addEventListener("click", (event) => {
   const button = event.target.closest(".conversation");
-  if (button) openDetail(button.dataset.source, button.dataset.id);
+  if (!button) return;
+  if (event.target.closest(".check-mark")) {
+    toggleConversationCheck(button.dataset.source, button.dataset.id);
+    return;
+  }
+  openDetail(button.dataset.source, button.dataset.id);
 });
+
+function toggleConversationCheck(source, id) {
+  const key = `${source}:${id}`;
+  if (state.checked.has(key)) {
+    state.checked.delete(key);
+  } else {
+    const item = state.items.find((it) => it.source === source && it.id === id);
+    state.checked.set(key, { source, id, title: item?.title || "" });
+  }
+  renderList();
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  const bar = $("#selectionBar");
+  if (!bar) return;
+  const count = state.checked.size;
+  bar.hidden = count === 0;
+  $("#selectionCount").textContent = `已选 ${count} 个对话`;
+  $("#generateSummaryButton").disabled = count === 0 || count > 20;
+}
+
+// ---- 对话总结 / 内容分析 ----
+
+$("#selectAllVisibleButton")?.addEventListener("click", () => {
+  state.items.forEach((item) => {
+    const key = `${item.source}:${item.id}`;
+    if (!state.checked.has(key)) {
+      state.checked.set(key, { source: item.source, id: item.id, title: item.title });
+    }
+  });
+  renderList();
+  updateSelectionBar();
+});
+
+$("#clearSelectionButton")?.addEventListener("click", () => {
+  state.checked.clear();
+  renderList();
+  updateSelectionBar();
+});
+
+$("#generateSummaryButton")?.addEventListener("click", openSummaryGenDialog);
+$("#gotoSelectButton")?.addEventListener("click", () => setView("find"));
+$("#closeSummaryGenButton")?.addEventListener("click", () => $("#summaryGenDialog").close());
+$("#confirmSummaryGenButton")?.addEventListener("click", runSummaryGen);
+
+function openSummaryGenDialog() {
+  if (!state.checked.size) {
+    showToast("请先在列表中勾选至少一个对话");
+    return;
+  }
+  if (state.checked.size > 20) {
+    showToast("一次最多分析 20 个对话");
+    return;
+  }
+  $("#summaryGenMeta").textContent =
+    `将对已选的 ${state.checked.size} 个对话生成内容分析，使用 设置 → 模型摘要 中配置的接口。`;
+  $("#summaryGenFocus").value = "";
+  $("#summaryGenName").value = "";
+  $("#summaryGenState").textContent = "";
+  $("#summaryGenDialog").showModal();
+}
+
+async function runSummaryGen() {
+  const button = $("#confirmSummaryGenButton");
+  button.disabled = true;
+  $("#summaryGenState").textContent = "正在调用模型生成，可能需要十几秒到一分钟…";
+  try {
+    const conversations = [...state.checked.values()].map(({ source, id }) => ({ source, id }));
+    const result = await api("/api/conversation-summary/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        conversations,
+        focus: $("#summaryGenFocus").value.trim(),
+        title: $("#summaryGenName").value.trim(),
+      }),
+    });
+    $("#summaryGenDialog").close();
+    state.checked.clear();
+    renderList();
+    updateSelectionBar();
+    showToast("对话分析已生成并保存");
+    setView("summaries");
+    await loadSummaries();
+    if (result.summary?.id) openSummary(result.summary.id);
+  } catch (error) {
+    $("#summaryGenState").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadSummaries() {
+  const box = $("#summariesList");
+  if (!box) return;
+  box.innerHTML = `<span class="muted">正在读取…</span>`;
+  try {
+    const data = await api("/api/conversation-summaries");
+    state.summaries = data.items || [];
+    renderSummaries();
+  } catch (error) {
+    box.innerHTML = `<span class="muted">读取失败：${escapeHtml(error.message)}</span>`;
+  }
+}
+
+function renderSummaries() {
+  const box = $("#summariesList");
+  if (!box) return;
+  if (!state.summaries.length) {
+    box.innerHTML = `<div class="summaries-empty"><p>还没有保存的对话分析。</p><p class="muted">去"找对话"勾选对话后点击"生成对话分析"。</p></div>`;
+    return;
+  }
+  box.innerHTML = state.summaries.map((item) => `
+    <button class="summary-row${item.id === state.currentSummaryId ? " active" : ""}"
+      data-summary="${escapeHtml(item.id)}" type="button">
+      <strong>${escapeHtml(item.title)}</strong>
+      <small>${item.conversation_count} 个对话 · ${escapeHtml(item.model || "模型")} · ${dateTime(item.created_at)}</small>
+    </button>
+  `).join("");
+}
+
+$("#summariesList")?.addEventListener("click", (event) => {
+  const row = event.target.closest(".summary-row");
+  if (row) openSummary(row.dataset.summary);
+});
+
+async function openSummary(id) {
+  state.currentSummaryId = id;
+  renderSummaries();
+  const pane = $("#summaryContent");
+  pane.innerHTML = `<div class="empty-detail"><div><h2>正在读取…</h2></div></div>`;
+  try {
+    const data = await api(`/api/conversation-summary/${encodeURIComponent(id)}`);
+    renderSummaryDetail(data);
+  } catch (error) {
+    pane.innerHTML = `<div class="empty-detail"><div><h2>读取失败</h2><p>${escapeHtml(error.message)}</p></div></div>`;
+  }
+}
+
+function renderSummaryDetail(data) {
+  const pane = $("#summaryContent");
+  const refs = (data.source_refs || []).map((ref) => `
+    <button class="summary-ref" data-source="${escapeHtml(ref.source)}"
+      data-id="${escapeHtml(ref.conversation_id)}" type="button">
+      <span class="source-dot ${escapeHtml(ref.source)}"></span>
+      <span>${escapeHtml(ref.title || ref.conversation_id)}</span>
+    </button>`).join("");
+  pane.innerHTML = `
+    <header class="summary-detail-head">
+      <div>
+        <p class="eyebrow">CONVERSATION ANALYSIS</p>
+        <h2>${escapeHtml(data.title)}</h2>
+        <p class="muted">${escapeHtml(data.model || "")} · 生成于 ${dateTime(data.created_at)}${
+          data.focus ? ` · 重点：${escapeHtml(data.focus)}` : ""}</p>
+      </div>
+      <div class="summary-detail-actions">
+        <button id="archiveSummaryButton" class="button ghost" type="button">归档</button>
+      </div>
+    </header>
+    <div class="summary-md">${mdLite(data.content_md || "")}</div>
+    <details class="summary-refs">
+      <summary>来源对话（${(data.source_refs || []).length}）</summary>
+      <div class="summary-ref-list">${refs}</div>
+    </details>
+  `;
+  pane.scrollTop = 0;
+  pane.querySelector("#archiveSummaryButton").addEventListener("click", async () => {
+    if (!window.confirm("归档后这条分析将从列表隐藏（不会物理删除，数据仍保留）。确定归档？")) return;
+    try {
+      await api("/api/conversation-summary/archive", {
+        method: "POST",
+        body: JSON.stringify({ id: data.id }),
+      });
+      showToast("已归档");
+      state.currentSummaryId = "";
+      await loadSummaries();
+      pane.innerHTML = `<div class="empty-detail"><div><h2>选择左侧的总结</h2></div></div>`;
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  pane.querySelectorAll(".summary-ref").forEach((el) => {
+    el.addEventListener("click", () => {
+      setView("find");
+      openDetail(el.dataset.source, el.dataset.id);
+    });
+  });
+}
+
+function mdLite(md) {
+  const esc = escapeHtml(String(md || ""));
+  const lines = esc.split(/\r?\n/);
+  const out = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+  };
+  const inline = (text) => text
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    let m;
+    if ((m = line.match(/^###\s+(.*)/))) { closeList(); out.push(`<h3>${inline(m[1])}</h3>`); }
+    else if ((m = line.match(/^##\s+(.*)/))) { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); }
+    else if ((m = line.match(/^#\s+(.*)/))) { closeList(); out.push(`<h2>${inline(m[1])}</h2>`); }
+    else if ((m = line.match(/^[-*]\s+(.*)/))) {
+      if (!inList) { out.push("<ul>"); inList = true; }
+      out.push(`<li>${inline(m[1])}</li>`);
+    } else if (!line.trim()) {
+      closeList();
+    } else {
+      closeList();
+      out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  closeList();
+  return out.join("\n");
+}
 
 $("#loadMoreButton").addEventListener("click", async () => {
   state.offset = state.items.length;

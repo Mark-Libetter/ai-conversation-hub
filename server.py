@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 10
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.18.15"
+APP_VERSION = "0.19.0"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -63,7 +63,7 @@ BACKUP_TABLES = (
     "project_detection_rules", "knowledge_items", "knowledge_evidence",
     "knowledge_revisions", "knowledge_relations", "project_roots",
     "skill_management", "skill_project_links", "project_plans",
-    "knowledge_exports",
+    "knowledge_exports", "conversation_summaries",
 )
 
 
@@ -732,6 +732,22 @@ def notes_db() -> sqlite3.Connection:
           content_hash TEXT NOT NULL DEFAULT '',
           metadata_json TEXT NOT NULL DEFAULT '{}',
           created_at REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_summaries (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL DEFAULT '',
+          model TEXT NOT NULL DEFAULT '',
+          focus TEXT NOT NULL DEFAULT '',
+          source_refs_json TEXT NOT NULL DEFAULT '[]',
+          content_md TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'ready',
+          error TEXT NOT NULL DEFAULT '',
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
         )
         """
     )
@@ -4750,6 +4766,210 @@ class ConversationIndex:
             metadata={"day": day, "has_note": bool(note), "character_count": len(note)},
         )
         return {"ok": True, "updated_at": now, "manual_note": note}
+
+    # ---- 对话总结 / 内容分析（模型生成，保存在 hub_notes 自有库） ----
+
+    def conversation_summaries_list(self) -> dict[str, Any]:
+        with notes_db() as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT id,title,model,focus,source_refs_json,status,error,
+                           created_at,updated_at,length(content_md) AS content_len
+                    FROM conversation_summaries
+                    WHERE status != 'archived'
+                    ORDER BY created_at DESC
+                    LIMIT 500
+                    """
+                )
+            ]
+        items = []
+        for row in rows:
+            try:
+                refs = json.loads(row.get("source_refs_json") or "[]")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                refs = []
+            items.append(
+                {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "model": row["model"],
+                    "focus": row["focus"],
+                    "status": row["status"],
+                    "conversation_count": len(refs) if isinstance(refs, list) else 0,
+                    "content_len": int(row.get("content_len") or 0),
+                    "created_at": float(row["created_at"]),
+                    "updated_at": float(row["updated_at"]),
+                }
+            )
+        return {"items": items, "total": len(items)}
+
+    def conversation_summary_detail(self, summary_id: str) -> dict[str, Any] | None:
+        with notes_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_summaries WHERE id=?",
+                (summary_id,),
+            ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        try:
+            data["source_refs"] = json.loads(data.get("source_refs_json") or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            data["source_refs"] = []
+        return data
+
+    def generate_conversation_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
+        config = summary_runtime_config()
+        if not config.get("enabled") or not config.get("has_api_key"):
+            raise ValueError("尚未配置可用的总结模型，请先在 设置 → 模型摘要 里填写接口与密钥")
+
+        raw_items = payload.get("conversations") or []
+        if not isinstance(raw_items, list) or not raw_items:
+            raise ValueError("请至少选择一个对话")
+        if len(raw_items) > 20:
+            raise ValueError("一次最多分析 20 个对话，请减少所选数量")
+        focus = clean_text(payload.get("focus"), 500)
+
+        with self._lock:
+            by_key = dict(self._by_key)
+        items: list[Conversation] = []
+        for row in raw_items:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                clean_text(row.get("source"), 30),
+                clean_text(row.get("id") or row.get("conversation_id"), 240),
+            )
+            item = by_key.get(key)
+            if item is not None:
+                items.append(item)
+        if not items:
+            raise ValueError("所选对话不在当前索引中，可能已被数据源移除")
+        items.sort(key=lambda item: item.updated_at)
+
+        # 组装脱敏转录：控制总量，避免超出模型上下文
+        transcripts = []
+        remaining = 90_000
+        for item in items:
+            lines: list[str] = []
+            for message in self._messages_for_item(item, limit=80):
+                role = "用户" if message["role"] == "user" else "助手"
+                line = f"{role}: {message['text']}"
+                if len(line) > remaining:
+                    line = line[:remaining]
+                if line:
+                    lines.append(line)
+                    remaining -= len(line)
+                if remaining <= 0:
+                    break
+            transcripts.append(
+                {
+                    "source": item.source,
+                    "conversation_id": item.id,
+                    "title": item.title,
+                    "workspace": item.workspace,
+                    "transcript": "\n".join(lines),
+                }
+            )
+            if remaining <= 0:
+                break
+
+        focus_hint = f"用户的分析重点是：{focus}。" if focus else ""
+        system_prompt = (
+            "你是本地 AI 对话内容分析助手。只依据提供的用户/助手正文进行分析，"
+            "不推测工具是否真的执行成功，把声称完成的事项写成谨慎、可核查的结论，"
+            "并区分已完成、进行中、受阻、状态不明。不得输出系统提示、推理过程、"
+            "工具调用、密钥或隐私信息。"
+            "请对给定的一个或多个 AI 对话做内容分析，直接输出一篇结构清晰的中文 Markdown 报告，"
+            "依次包含以下小节：\n"
+            "## 概览：用一段话说明这些对话整体在解决什么问题。\n"
+            "## 逐个对话：每个对话一个 ### 小节（以对话标题命名），说明目的、做了什么、结果或现状。\n"
+            "## 关键决定与产出：跨对话的重要决定、产出物与结论。\n"
+            "## 关联与主线：若有多个对话，说明它们之间的联系与共同主线；只有一个对话时可简述其内部脉络。\n"
+            "## 遗留与下一步：尚未完成或存疑之处，以及建议的下一步。\n"
+            "要求忠实于原文、语言简洁具体，不要复述统计数字，不要编造原文没有的内容。"
+        )
+        content = self._chat_completion(
+            config,
+            [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"focus_hint": focus_hint, "conversations": transcripts},
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            max_tokens=min(8192, max(1200, int(config.get("max_tokens") or 2400) * 2)),
+        )
+        content = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
+        if not content:
+            raise ValueError("模型没有返回有效内容")
+
+        refs = [
+            {"source": item.source, "conversation_id": item.id, "title": item.title}
+            for item in items
+        ]
+        title = clean_text(payload.get("title"), 120)
+        if not title:
+            title = focus[:40] if focus else (
+                items[0].title if len(items) == 1 else f"对话分析 · {len(items)} 个对话"
+            )
+        summary_id = f"cs-{int(time.time() * 1000)}-{secrets.token_hex(4)}"
+        now = time.time()
+        with notes_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO conversation_summaries(
+                  id,title,model,focus,source_refs_json,content_md,status,error,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    summary_id,
+                    title,
+                    str(config.get("model") or ""),
+                    focus,
+                    json.dumps(refs, ensure_ascii=False),
+                    content,
+                    "ready",
+                    "",
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        self.record_activity(
+            "conversation_summary",
+            "生成对话分析",
+            summary=title,
+            model=str(config.get("model") or ""),
+            metadata={"conversation_count": len(items), "summary_id": summary_id},
+        )
+        detail = self.conversation_summary_detail(summary_id) or {}
+        return {"ok": True, "summary": detail}
+
+    def archive_conversation_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
+        summary_id = clean_text(payload.get("id"), 120)
+        if not summary_id:
+            raise ValueError("缺少要归档的记录 id")
+        now = time.time()
+        with notes_db() as conn:
+            cursor = conn.execute(
+                "UPDATE conversation_summaries SET status='archived',updated_at=? WHERE id=?",
+                (now, summary_id),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                raise ValueError("记录不存在或已被归档")
+        self.record_activity(
+            "conversation_summary",
+            "归档对话分析",
+            metadata={"summary_id": summary_id},
+        )
+        return {"ok": True, "archived": summary_id}
 
     def projects(self) -> dict[str, Any]:
         with notes_db() as conn:
@@ -9655,6 +9875,14 @@ class Handler(BaseHTTPRequestHandler):
             result = INDEX.project_detail(project_id)
             self._json(result if result else {"error": "Project not found"}, 200 if result else 404)
             return
+        if path == "/api/conversation-summaries":
+            self._json(INDEX.conversation_summaries_list())
+            return
+        if path.startswith("/api/conversation-summary/"):
+            summary_id = urllib.parse.unquote(path.removeprefix("/api/conversation-summary/"))
+            result = INDEX.conversation_summary_detail(summary_id)
+            self._json(result if result else {"error": "Summary not found"}, 200 if result else 404)
+            return
         if path == "/api/daily":
             try:
                 self._json(INDEX.daily_summary((params.get("date") or [""])[0]))
@@ -9727,6 +9955,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         failure_kinds = {
             "/api/daily/generate": "daily_summary",
+            "/api/conversation-summary/generate": "conversation_summary",
             "/api/project/daily/generate": "project_summary",
             "/api/project/plan/generate": "project_plan",
             "/api/project/plan/save": "project_plan",
@@ -9766,6 +9995,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/daily/note":
                 self._json(INDEX.save_daily_note(payload))
+                return
+            if path == "/api/conversation-summary/generate":
+                self._json(INDEX.generate_conversation_summary(payload))
+                return
+            if path == "/api/conversation-summary/archive":
+                self._json(INDEX.archive_conversation_summary(payload))
                 return
             if path == "/api/summary-config":
                 self._json(INDEX.save_summary_config(payload))
