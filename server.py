@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 10
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.19.1"
+APP_VERSION = "0.19.2"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -1140,6 +1140,8 @@ def detect_model_provider(api_url: str) -> str:
         port = None
     if hostname.endswith("paratera.com"):
         return "paratera"
+    if hostname.endswith("agentrouter.org"):
+        return "agentrouter"
     if hostname in {"127.0.0.1", "localhost", "::1"} and port == 11434:
         return "ollama"
     if hostname in {"127.0.0.1", "localhost", "::1"} and port == 1234:
@@ -1163,6 +1165,8 @@ def model_capability(model_id: str) -> tuple[str, str, bool]:
                 ("minimax", "MiniMax"),
                 ("ernie", "ERNIE"),
                 ("baichuan", "Baichuan"),
+                ("claude", "Claude"),
+                ("gemini", "Gemini"),
                 ("gpt", "OpenAI"),
                 ("llama", "Llama"),
                 ("mistral", "Mistral"),

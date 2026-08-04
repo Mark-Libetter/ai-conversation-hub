@@ -1177,6 +1177,7 @@ function renderSummaryConfig(config) {
   state.summaryModels = Array.isArray(config.models) ? config.models : [];
   $("#summaryModelEnabled").checked = Boolean(config.enabled);
   $("#summaryProviderPreset").value = config.provider || "custom";
+  updateSummaryPresetHint();
   $("#summaryApiUrl").value = config.api_url || "";
   $("#summaryModelName").value = config.model || "";
   $("#summaryFallbackModel").value = config.fallback_model || "";
@@ -1201,6 +1202,8 @@ function renderSummaryConfig(config) {
     ? "配置已保存"
     : "需要密钥";
   $("#summaryConnectionBadge").classList.toggle("ok", Boolean(config.has_api_key));
+  const isLocalEndpoint = /127\.0\.0\.1|localhost/.test(config.api_url || "");
+  $("#summaryFreeQuotaTip").hidden = config.has_api_key || isLocalEndpoint;
   renderSummaryModelLibrary();
   const updated = config.models_updated_at
     ? `上次读取 ${dateTime(config.models_updated_at)}`
@@ -3984,19 +3987,52 @@ $("#modelSettingsDialog").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.close();
 });
 
+const PRESET_URLS = {
+  agentrouter: "https://agentrouter.org/v1",
+  paratera: "https://llmapi.paratera.com/v1",
+  ollama: "http://127.0.0.1:11434/v1",
+  lmstudio: "http://127.0.0.1:1234/v1",
+  openai: "https://api.openai.com/v1",
+};
+
+const PRESET_HINTS = {
+  agentrouter:
+    '免费额度推荐：用 GitHub 登录 <a href="https://agentrouter.org" target="_blank" rel="noopener">agentrouter.org</a>，' +
+    "在控制台 API Keys 页点 Create New Key，把生成的 sk- 密钥粘贴到上方 API 密钥；" +
+    "新账号约有 $100 免费额度，足够日常日报与对话分析。填好后点“读取模型列表”挑选模型。",
+  paratera: "填写 Paratera MaaS 提供的接口与密钥。",
+  ollama: "本机 Ollama（默认端口 11434），无需密钥，需先在 Ollama 里拉取模型。",
+  lmstudio: "本机 LM Studio（默认端口 1234），无需密钥，需在 LM Studio 里启动本地服务。",
+  openai: "OpenAI 官方接口，需要 OpenAI API 密钥，按量计费。",
+  custom: "填写任意 OpenAI Chat Completions 兼容接口地址与密钥。",
+};
+
+function updateSummaryPresetHint() {
+  const preset = $("#summaryProviderPreset").value;
+  const hint = $("#summaryPresetHint");
+  if (!hint) return;
+  hint.innerHTML = PRESET_HINTS[preset] || PRESET_HINTS.custom;
+}
+
 $("#summaryProviderPreset").addEventListener("change", (event) => {
   const preset = event.target.value;
-  const urls = {
-    paratera: "https://llmapi.paratera.com/v1",
-    ollama: "http://127.0.0.1:11434/v1",
-    lmstudio: "http://127.0.0.1:1234/v1",
-    openai: "https://api.openai.com/v1",
-  };
-  if (urls[preset]) $("#summaryApiUrl").value = urls[preset];
+  if (PRESET_URLS[preset]) $("#summaryApiUrl").value = PRESET_URLS[preset];
+  updateSummaryPresetHint();
   state.summaryModels = [];
   $("#summaryModelCatalogState").textContent = "接口已改变，请重新读取模型列表";
   renderSummaryModelLibrary();
   if (preset !== "custom") $("#discoverSummaryModelsButton").focus();
+});
+
+$("#useAgentRouterButton")?.addEventListener("click", () => {
+  $("#summaryProviderPreset").value = "agentrouter";
+  $("#summaryApiUrl").value = PRESET_URLS.agentrouter;
+  updateSummaryPresetHint();
+  state.summaryModels = [];
+  $("#summaryModelCatalogState").textContent = "接口已改变，请粘贴密钥后读取模型列表";
+  renderSummaryModelLibrary();
+  $("#summaryFreeQuotaTip").hidden = true;
+  $("#summaryApiKey").focus();
 });
 
 $("#discoverSummaryModelsButton").addEventListener("click", async (event) => {

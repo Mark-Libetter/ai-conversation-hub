@@ -800,6 +800,16 @@
           <button id="closeModelSettingsButton" class="button ghost" type="button">关闭</button>
         </div>
         <p class="muted">模型列表读取不会产生对话请求；只有你主动测试连接或生成摘要时才调用模型。</p>
+        <div id="summaryFreeQuotaTip" class="free-quota-tip" hidden>
+          <div>
+            <strong>还没配置模型？</strong>
+            <span>可用 Agent Router 的免费额度（新账号约 $100）来跑日报和对话分析，注册即可领取。</span>
+          </div>
+          <span class="free-quota-actions">
+            <button id="useAgentRouterButton" class="button secondary" type="button">选 Agent Router 预置</button>
+            <a href="https://agentrouter.org" target="_blank" rel="noopener">去注册领取</a>
+          </span>
+        </div>
         <label class="settings-toggle">
           <input id="summaryModelEnabled" type="checkbox">
           <span><strong>启用模型摘要</strong><small>允许日报按钮调用下面配置的模型</small></span>
@@ -812,15 +822,17 @@
           </div>
           <div class="settings-fields">
             <label><span>服务预设</span><select id="summaryProviderPreset">
+              <option value="agentrouter">Agent Router（免费额度）</option>
               <option value="paratera">Paratera MaaS</option>
               <option value="ollama">Ollama 本机</option>
               <option value="lmstudio">LM Studio 本机</option>
               <option value="openai">OpenAI API</option>
               <option value="custom">自定义 OpenAI 兼容接口</option>
             </select></label>
-            <label><span>接口地址</span><input id="summaryApiUrl" type="url" placeholder="例如：https://llmapi.paratera.com/v1" autocomplete="off"></label>
+            <label><span>接口地址</span><input id="summaryApiUrl" type="url" placeholder="例如：https://agentrouter.org/v1" autocomplete="off"></label>
             <label class="settings-field-wide"><span>API 密钥</span><input id="summaryApiKey" type="password" placeholder="留空则保留已保存密钥" autocomplete="new-password"></label>
           </div>
+          <p id="summaryPresetHint" class="preset-hint muted"></p>
           <div class="secret-state">
             <span id="summarySecretState" class="muted">尚未读取密钥状态</span>
             <label><input id="clearSummaryApiKey" type="checkbox"> 清除已保存的密钥</label>
