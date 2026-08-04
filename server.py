@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 10
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.20.1"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -1142,6 +1142,8 @@ def detect_model_provider(api_url: str) -> str:
         return "paratera"
     if hostname.endswith("agentrouter.org"):
         return "agentrouter"
+    if hostname in {"127.0.0.1", "localhost", "::1"} and port == 3001:
+        return "freellmapi"
     if hostname in {"127.0.0.1", "localhost", "::1"} and port == 11434:
         return "ollama"
     if hostname in {"127.0.0.1", "localhost", "::1"} and port == 1234:

@@ -3993,6 +3993,7 @@ $("#modelSettingsDialog").addEventListener("click", (event) => {
 });
 
 const PRESET_URLS = {
+  freellmapi: "http://127.0.0.1:3001/v1",
   agentrouter: "https://agentrouter.org/v1",
   paratera: "https://llmapi.paratera.com/v1",
   ollama: "http://127.0.0.1:11434/v1",
@@ -4001,6 +4002,11 @@ const PRESET_URLS = {
 };
 
 const PRESET_HINTS = {
+  freellmapi:
+    '本地免费额度聚合：先安装 <a href="https://github.com/tashfeenahmed/freellmapi/releases/latest" target="_blank" rel="noopener">FreeLLMAPI</a>' +
+    "（Windows 桌面 .exe 或 Docker），启动后打开 http://127.0.0.1:3001，在 Keys 页添加各家（Google/Groq 等）的免费额度密钥，" +
+    "再把页面顶部的统一 API key 粘贴到上方 API 密钥。它聚合约 29 家免费额度（约 40 亿 token/月），自动路由并在限流时切换。" +
+    "填好后点“读取模型列表”挑选模型。",
   agentrouter:
     '免费额度推荐：用 GitHub 登录 <a href="https://agentrouter.org" target="_blank" rel="noopener">agentrouter.org</a>，' +
     "在控制台 API Keys 页点 Create New Key，把生成的 sk- 密钥粘贴到上方 API 密钥；" +
@@ -4029,9 +4035,9 @@ $("#summaryProviderPreset").addEventListener("change", (event) => {
   if (preset !== "custom") $("#discoverSummaryModelsButton").focus();
 });
 
-$("#useAgentRouterButton")?.addEventListener("click", () => {
-  $("#summaryProviderPreset").value = "agentrouter";
-  $("#summaryApiUrl").value = PRESET_URLS.agentrouter;
+$("#useFreeLLMAPIButton")?.addEventListener("click", () => {
+  $("#summaryProviderPreset").value = "freellmapi";
+  $("#summaryApiUrl").value = PRESET_URLS.freellmapi;
   updateSummaryPresetHint();
   state.summaryModels = [];
   $("#summaryModelCatalogState").textContent = "接口已改变，请粘贴密钥后读取模型列表";

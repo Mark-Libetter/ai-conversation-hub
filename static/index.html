@@ -806,11 +806,11 @@
         <div id="summaryFreeQuotaTip" class="free-quota-tip" hidden>
           <div>
             <strong>还没配置模型？</strong>
-            <span>可用 Agent Router 的免费额度（新账号约 $100）来跑日报和对话分析，注册即可领取。</span>
+            <span>推荐本地装 FreeLLMAPI，把 29 家免费额度聚合成一个接口（约 40 亿 token/月），免费跑日报和对话分析。</span>
           </div>
           <span class="free-quota-actions">
-            <button id="useAgentRouterButton" class="button secondary" type="button">选 Agent Router 预置</button>
-            <a href="https://agentrouter.org" target="_blank" rel="noopener">去注册领取</a>
+            <button id="useFreeLLMAPIButton" class="button secondary" type="button">选 FreeLLMAPI 预置</button>
+            <a href="https://github.com/tashfeenahmed/freellmapi/releases/latest" target="_blank" rel="noopener">去下载安装</a>
           </span>
         </div>
         <label class="settings-toggle">
@@ -825,6 +825,7 @@
           </div>
           <div class="settings-fields">
             <label><span>服务预设</span><select id="summaryProviderPreset">
+              <option value="freellmapi">FreeLLMAPI（本地聚合免费额度）</option>
               <option value="agentrouter">Agent Router（免费额度）</option>
               <option value="paratera">Paratera MaaS</option>
               <option value="ollama">Ollama 本机</option>
