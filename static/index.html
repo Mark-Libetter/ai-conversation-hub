@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>AI 对话中心 · 对话指挥中心</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <div class="app-frame">
+      <aside id="primarySidebar" class="primary-sidebar" aria-label="侧边栏">
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <span class="brand-copy"><strong>对话中心</strong><small>LOCAL · 私有部署</small></span>
+          <button id="sidebarCollapseButton" class="sidebar-collapse-button" type="button"
+            aria-controls="primarySidebar" aria-expanded="true" title="收起侧边栏">‹</button>
+        </div>
+
+        <nav id="primaryNav" class="primary-nav" aria-label="主要功能">
+          <button class="primary-nav-item active" data-view="find" type="button" title="找对话">
+            <span class="nav-icon" aria-hidden="true">⌕</span>
+            <span class="nav-copy"><span>找对话</span><small>检索与继续工作</small></span>
+          </button>
+          <button class="primary-nav-item" data-view="daily" type="button" title="每日回顾">
+            <span class="nav-icon" aria-hidden="true">◎</span>
+            <span class="nav-copy"><span>每日回顾</span><small>成果与未完成事项</small></span>
+          </button>
+          <button class="primary-nav-item" data-view="project" type="button" title="项目">
+            <span class="nav-icon" aria-hidden="true">▦</span>
+            <span class="nav-copy"><span>项目</span><small>演进、版本与待办</small></span>
+          </button>
+        </nav>
+
+        <div class="source-section">
+          <details id="sourceDetails" class="source-details" open>
+            <summary><span>数据来源</span><small>展开 / 收起</small></summary>
+            <nav class="agent-switcher" id="agentSwitcher" aria-label="数据来源">
+              <button class="source-row active" data-source="all" type="button">
+                <span class="source-dot all"></span><span>全部来源</span><b id="allCount">—</b>
+              </button>
+              <button class="source-row" data-source="codex" type="button">
+                <span class="source-dot codex"></span><span>Codex</span><b id="codexCount">—</b>
+              </button>
+              <button class="source-row" data-source="workbuddy" type="button">
+                <span class="source-dot workbuddy"></span><span>WorkBuddy</span><b id="workbuddyCount">—</b>
+              </button>
+              <button class="source-row" data-source="claude" type="button">
+                <span class="source-dot claude"></span><span>Claude Code</span><b id="claudeCount">—</b>
+              </button>
+              <button class="source-row" data-source="hermes" type="button">
+                <span class="source-dot hermes"></span><span>Hermes</span><b id="hermesCount">—</b>
+              </button>
+              <button class="source-row" data-source="codepilot" type="button">
+                <span class="source-dot codepilot"></span><span>CodePilot</span><b id="codepilotCount">—</b>
+              </button>
+              <button class="source-row" data-source="cursor" type="button">
+                <span class="source-dot cursor"></span><span>Cursor</span><b id="cursorCount">—</b>
+              </button>
+              <button class="source-row" data-source="marvis" type="button">
+                <span class="source-dot marvis"></span><span>Marvis</span><b id="marvisCount">—</b>
+              </button>
+              <button class="source-row" data-source="qclaw" type="button">
+                <span class="source-dot qclaw"></span><span>QClaw</span><b id="qclawCount">—</b>
+              </button>
+              <button class="source-row" data-source="qoderwork" type="button">
+                <span class="source-dot qoderwork"></span><span>QoderWork</span><b id="qoderworkCount">—</b>
+              </button>
+              <div id="customSourceRows" class="custom-source-rows"></div>
+            </nav>
+            <span id="refreshedAt" class="sidebar-refresh"></span>
+          </details>
+        </div>
+        <nav id="sidebarUtility" class="sidebar-utility" aria-label="辅助功能">
+          <button data-view="skills" type="button" title="Skills"><span class="utility-icon" aria-hidden="true">S</span><span class="utility-copy"><span>Skills</span><small>能力、来源与版本</small></span></button>
+          <button data-view="assets" type="button" title="工具"><span class="utility-icon" aria-hidden="true">T</span><span class="utility-copy"><span>工具</span><small>知识、导出与续接</small></span></button>
+          <button data-view="settings" type="button" title="设置"><span class="utility-icon" aria-hidden="true">⚙</span><span class="utility-copy"><span>设置</span><small>数据源、模型与审计</small></span></button>
+        </nav>
+      </aside>
+
+      <main class="app-workspace">
+        <header class="workspace-topbar">
+          <div class="workspace-title">
+            <p class="eyebrow">CONVERSATION COMMAND CENTER</p>
+            <h1>对话指挥中心</h1>
+          </div>
+          <div class="global-search">
+            <span class="search-mark" aria-hidden="true"></span>
+            <select id="searchAgentFilter" aria-label="搜索范围">
+              <option value="all">全部 Agent</option>
+              <option value="codex">Codex</option>
+              <option value="workbuddy">WorkBuddy</option>
+              <option value="claude">Claude Code</option>
+              <option value="hermes">Hermes</option>
+              <option value="codepilot">CodePilot</option>
+              <option value="cursor">Cursor</option>
+              <option value="marvis">Marvis</option>
+              <option value="qclaw">QClaw</option>
+              <option value="qoderwork">QoderWork</option>
+            </select>
+            <input id="searchInput" type="search" placeholder='关键词默认 AND；支持 "短语"、OR、NOT 和括号'>
+            <details class="search-syntax">
+              <summary aria-label="搜索语法帮助">语法</summary>
+              <div>
+                <strong>组合搜索</strong>
+                <p><code>模型 API</code>：同时包含两个词</p>
+                <p><code>"每日回顾"</code>：精确短语</p>
+                <p><code>Hermes OR Codex</code>：包含任一个</p>
+                <p><code>摘要 NOT 股票</code>：排除关键词</p>
+                <p><code>摘要 -股票</code>：减号也表示排除</p>
+                <p><code>(日报 OR 周报) API</code>：括号组合</p>
+              </div>
+            </details>
+            <kbd>Ctrl K</kbd>
+          </div>
+          <div class="today-stamp">
+            <div><strong id="todayDate">—</strong><span>本机只读索引</span></div>
+            <button id="themeButton" class="theme-trigger" type="button" aria-haspopup="dialog">换肤</button>
+          </div>
+        </header>
+
+        <section id="findView" class="app-view active" aria-label="找对话">
+          <div class="find-layout">
+            <div class="workstream">
+              <section id="findDailyBrief" class="daily-brief" aria-label="今日回顾摘要">
+                <div class="brief-loading">正在整理今日工作…</div>
+              </section>
+
+              <div class="find-tools">
+                <div class="quick-ranges" id="quickRanges">
+                  <button class="quick-range" data-range="today" type="button">今天</button>
+                  <button class="quick-range" data-range="3d" type="button">近 3 天</button>
+                  <button class="quick-range" data-range="7d" type="button">近 7 天</button>
+                  <button class="quick-range" data-range="30d" type="button">近 30 天</button>
+                  <button class="quick-range active" data-range="all" type="button">全部</button>
+                </div>
+                <div class="filter-actions">
+                  <select id="statusFilter" aria-label="管理状态">
+                    <option value="all">全部状态</option>
+                    <option value="todo">待继续</option>
+                    <option value="done">已完成</option>
+                    <option value="reference">重要参考</option>
+                    <option value="archive_candidate">可归档候选</option>
+                  </select>
+                  <select id="workspaceFilter" aria-label="工作区">
+                    <option value="all">全部工作区</option>
+                  </select>
+                  <select id="nativeProjectFilter" aria-label="Agent 原生项目">
+                    <option value="all">全部原生项目</option>
+                  </select>
+                  <button id="favoriteFilter" class="button ghost" type="button" aria-pressed="false">只看收藏</button>
+                  <button id="clearFiltersButton" class="button ghost" type="button">清除</button>
+                </div>
+              </div>
+
+              <details class="saved-views">
+                <summary>保存的视图</summary>
+                <div class="saved-view-controls">
+                  <select id="savedViewSelect" aria-label="选择保存的视图">
+                    <option value="">选择视图…</option>
+                  </select>
+                  <input id="savedViewName" type="text" maxlength="40" placeholder="例如：近 7 天 Codex">
+                  <button id="saveViewButton" class="button secondary" type="button">保存当前视图</button>
+                  <button id="deleteViewButton" class="button ghost" type="button" disabled>删除</button>
+                </div>
+              </details>
+
+              <section id="summary" class="summary" aria-label="对话统计"></section>
+              <div class="compat-heading" hidden>
+                <p id="workspaceEyebrow"></p><h2 id="workspaceTitle"></h2><p id="workspaceDescription"></p>
+              </div>
+
+              <section class="list-pane">
+                <div class="list-head">
+                  <span id="resultCount">正在读取…</span>
+                  <span class="list-head-actions">
+                    <span class="muted">按最近活动排列</span>
+                    <button id="detailToggleButton" class="button secondary detail-drawer-toggle" type="button"
+                      aria-controls="detailPane" aria-expanded="false">打开对话内容</button>
+                  </span>
+                </div>
+                <div id="conversationList" class="conversation-list" aria-live="polite"></div>
+                <button id="loadMoreButton" class="button secondary load-more" type="button" hidden>加载更多</button>
+              </section>
+            </div>
+
+            <div id="detailResizer" class="detail-resizer" role="separator" aria-label="调整对话详情宽度"
+              aria-orientation="vertical" aria-valuemin="300" aria-valuemax="720" aria-valuenow="400"
+              title="左右拖动调整详情宽度；双击恢复默认" tabindex="0"></div>
+            <aside id="detailPane" class="detail-pane" aria-label="对话详情" aria-hidden="true" hidden>
+              <div class="empty-detail">
+                <span class="empty-index">01</span>
+                <h2>选择一个对话</h2>
+                <p>这里会显示可追溯概览、最近上下文和你的管理信息。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="dailyView" class="app-view" aria-label="每日回顾">
+          <section id="dailyReview" class="daily-review" aria-labelledby="dailyReviewTitle">
+            <div class="daily-head">
+              <div>
+                <p class="eyebrow">DAILY REVIEW</p>
+                <h2 id="dailyReviewTitle">每日工作回顾</h2>
+                <p class="muted">按消息发生时间汇总工作，每条判断都能回到原对话核对。</p>
+              </div>
+              <div class="daily-controls">
+                <button id="previousDayButton" class="button ghost day-step" type="button" aria-label="前一天">前一天</button>
+                <input id="reviewDate" class="review-date" type="date" aria-label="选择回顾日期">
+                <button id="nextDayButton" class="button ghost day-step" type="button" aria-label="后一天">后一天</button>
+                <button id="generateDailyButton" class="button primary" type="button">重新生成基础摘要</button>
+              </div>
+            </div>
+            <div id="dailyDateStrip" class="daily-date-strip" aria-label="最近日期"></div>
+            <div id="dailyBody" class="daily-body" aria-live="polite">
+              <div class="daily-loading">正在整理当天对话…</div>
+            </div>
+          </section>
+        </section>
+
+        <section id="projectView" class="app-view" aria-label="项目管理">
+          <div class="project-layout">
+            <aside class="project-rail">
+              <div class="project-rail-actions">
+                <button id="createProjectButton" class="button primary" type="button">新建项目</button>
+                <input id="projectSearchInput" type="search" placeholder="搜索项目">
+              </div>
+              <button id="unassignedProjectRow" class="unassigned-project-row" type="button">
+                <span>未归属对话</span><b id="unassignedProjectCount">—</b>
+              </button>
+              <div id="projectList" class="project-list" aria-live="polite">
+                <p class="muted">正在识别项目…</p>
+              </div>
+              <div class="project-rail-footer">
+                <button id="refreshProjectsButton" class="button ghost" type="button">重新识别项目</button>
+                <span id="projectRefreshState" class="muted"></span>
+              </div>
+            </aside>
+
+            <div id="projectRailResizer" class="project-column-resizer project-rail-resizer"
+              role="separator" aria-label="调整项目列表宽度" aria-orientation="vertical"
+              aria-valuemin="180" aria-valuenow="230" tabindex="0"></div>
+
+            <main class="project-main">
+              <div id="projectEmptyState" class="project-empty">
+                <span class="empty-index">P</span>
+                <h2>选择一个项目</h2>
+                <p>查看今日主线、版本演进和各工作流的变化。</p>
+              </div>
+              <div id="projectContent" hidden>
+                <header class="project-heading">
+                  <div>
+                    <p class="eyebrow">PROJECT EVOLUTION</p>
+                    <h2 id="projectTitle">项目</h2>
+                    <p id="projectMeta" class="muted"></p>
+                  </div>
+                  <div class="project-heading-actions">
+                    <span id="projectPendingBadge" class="project-pending-badge"></span>
+                    <button id="projectRuleButton" class="button ghost" type="button">识别规则</button>
+                    <button id="manageProjectButton" class="button ghost" type="button">管理归类</button>
+                    <button id="projectContextPackButton" class="button secondary" type="button">生成续接包</button>
+                  </div>
+                </header>
+
+                <details class="project-classification-explainer">
+                  <summary><strong>这些对话为什么属于这个项目？</strong><span id="projectClassificationSummary"></span></summary>
+                  <div id="projectClassificationBody"></div>
+                </details>
+
+                <section class="project-daily">
+                  <div class="project-section-title">
+                    <div><strong>今日执行摘要</strong><span id="projectDailyDate"></span></div>
+                    <div class="project-daily-actions">
+                      <span id="projectDailyGenerator">基础摘要 · 每项可回到证据对话</span>
+                      <button id="generateProjectSummaryButton" class="button secondary" type="button">使用模型生成</button>
+                    </div>
+                  </div>
+                  <div id="projectDailyTemplate" class="project-daily-template"></div>
+                </section>
+
+                <section class="project-evolution-section">
+                  <div class="project-section-title">
+                    <div><strong>版本与工作流</strong><span>沿时间轴查看各条工作流如何演进</span></div>
+                  </div>
+                  <div class="project-evolution-scroll">
+                    <div id="projectTimeline" class="project-timeline"></div>
+                    <div class="project-workstreams-scroll">
+                      <div id="projectWorkstreams" class="project-workstreams"></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="project-plan-section">
+                  <details class="project-collapsible" id="projectPlanDetails">
+                    <summary>项目规划教练（点击展开 / 收起）</summary>
+                    <div class="project-section-title">
+                      <div>
+                        <strong>项目规划教练</strong>
+                        <span id="projectPlanState">目标 → 里程碑 → 验收 → 下一步</span>
+                      </div>
+                      <div class="project-daily-actions">
+                        <button id="saveProjectPlanButton" class="button ghost" type="button">保存修改</button>
+                        <button id="generateProjectPlanButton" class="button secondary" type="button">让模型更新计划</button>
+                      </div>
+                    </div>
+                    <div class="project-plan-basics">
+                      <label class="wide"><span>一句话目标</span><input id="projectPlanObjective" type="text" maxlength="500" placeholder="希望为谁解决什么问题，最终得到什么结果"></label>
+                      <label><span>当前阶段</span><select id="projectPlanStage">
+                        <option value="discover">探索问题</option>
+                        <option value="plan">制定计划</option>
+                        <option value="build">制作实现</option>
+                        <option value="verify">验证验收</option>
+                        <option value="ship">发布交付</option>
+                        <option value="maintain">维护迭代</option>
+                      </select></label>
+                      <label><span>现在就做</span><input id="projectPlanNextAction" type="text" maxlength="400" placeholder="一个可以立即执行的动作"></label>
+                      <label><span>成功标准（每行一项）</span><textarea id="projectPlanSuccess" rows="3"></textarea></label>
+                      <label><span>仍需回答（每行一项）</span><textarea id="projectPlanQuestions" rows="3"></textarea></label>
+                    </div>
+                    <div id="projectPlanMilestones" class="project-plan-milestones"></div>
+                    <div id="projectPlanRisks" class="project-plan-risks"></div>
+                  </details>
+                </section>
+
+                <section class="project-config-section">
+                  <details class="project-collapsible" id="projectConfigDetails">
+                    <summary>跨 Agent 配置提醒 — 同一项目多 Agent 间 Skill / Obsidian 仓库是否漂移</summary>
+                    <div class="project-section-title">
+                      <div>
+                        <strong>跨 Agent 配置对账</strong>
+                        <span id="projectConfigSummary">正在检查 Skill 与默认知识库…</span>
+                      </div>
+                      <button id="refreshProjectConfigButton" class="button ghost" type="button">重新对账</button>
+                    </div>
+                    <p id="projectConfigLogic" class="project-config-logic"></p>
+                    <div id="projectConfigAudit" class="project-config-audit"></div>
+                  </details>
+                </section>
+
+                <section class="project-obsidian-section">
+                  <details class="project-collapsible">
+                    <summary><strong>对话 → 知识候选 → Obsidian</strong><span id="projectObsidianState">模型只生成候选，审核后才归档</span></summary>
+                    <div class="project-obsidian-grid">
+                      <label class="wide"><span>Obsidian 仓库目录</span><input id="obsidianVaultPath" type="text" placeholder="例如 /Users/me/Documents/MyVault 或 D:\Obsidian\MyVault"></label>
+                      <label><span>归档子目录</span><input id="obsidianSubfolder" type="text" value="AI 对话中心"></label>
+                      <label class="obsidian-enable"><input id="obsidianEnabled" type="checkbox"><span>启用手动归档</span></label>
+                    </div>
+                    <p id="projectObsidianPolicy" class="muted"></p>
+                    <div class="project-daily-actions">
+                      <button id="saveObsidianConfigButton" class="button ghost" type="button">保存并验证路径</button>
+                      <button id="projectExtractKnowledgeButton" class="button secondary" type="button">模型分析今日对话</button>
+                      <button id="projectReviewKnowledgeButton" class="button ghost" type="button">审核知识候选</button>
+                      <button id="projectExportObsidianButton" class="button primary" type="button">导出已审核知识</button>
+                    </div>
+                  </details>
+                </section>
+
+                <section class="project-files-section">
+                  <details id="projectFilesDetails" class="project-collapsible">
+                    <summary><strong>文件与成果</strong><span id="projectFileScanState">仅显示文件元数据，展开后按需加载</span></summary>
+                    <div class="project-file-tools">
+                      <div id="projectRootCandidates" class="project-root-candidates"></div>
+                      <div class="project-root-add">
+                        <input id="projectRootPathInput" type="text" placeholder="也可以手动填写项目目录，例如 /Users/me/Projects/my-project">
+                        <button id="addProjectRootButton" class="button ghost" type="button">添加并启用目录</button>
+                      </div>
+                      <button id="refreshProjectFilesButton" class="button secondary" type="button">刷新最近文件</button>
+                    </div>
+                    <div id="projectFilesList" class="project-files-list">
+                      <p class="muted">展开后读取已缓存的文件元数据。</p>
+                    </div>
+                  </details>
+                </section>
+              </div>
+            </main>
+
+            <div id="projectDetailResizer" class="project-column-resizer project-detail-resizer"
+              role="separator" aria-label="调整项目详情宽度" aria-orientation="vertical"
+              aria-valuemin="250" aria-valuenow="330" tabindex="0"></div>
+
+            <aside id="projectDetailPane" class="project-detail-pane" aria-label="项目变更详情">
+              <div class="empty-detail">
+                <span class="empty-index">V</span>
+                <h2>选择一个版本</h2>
+                <p>这里会展示变更摘要、关联对话、验证结果和后续跟进。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="skillsView" class="app-view" aria-label="Skill 管理">
+          <div class="skills-page">
+            <div class="page-heading skills-heading">
+              <div>
+                <p class="eyebrow">SKILL ASSET LIBRARY</p>
+                <h2>Skill 资产库</h2>
+                <p>统一查看能力、来源、版本和项目关系。原始 Skill 保持只读。</p>
+              </div>
+              <div id="skillCatalogSummary" class="privacy-badge">正在发现本机 Skill…</div>
+            </div>
+            <div class="skill-stat-strip">
+              <button type="button" data-skill-stat="all"><strong id="skillTotalCount">—</strong><span>全部 Skill</span></button>
+              <button type="button" data-skill-stat="drift"><strong id="skillDriftCount">—</strong><span>跨 Agent 有差异</span></button>
+              <button type="button" data-skill-stat="favorites"><strong id="skillFavoriteCount">—</strong><span>收藏</span></button>
+            </div>
+            <div class="skills-layout">
+              <aside class="skill-catalog-pane">
+                <div class="skill-filters">
+                  <input id="skillSearchInput" type="search" placeholder="搜索名称、功能、来源、标签或备注">
+                  <select id="skillAgentFilter" aria-label="Skill Agent">
+                    <option value="all">全部 Agent</option>
+                    <option value="hermes">Hermes</option>
+                    <option value="codex">Codex</option>
+                    <option value="workbuddy">WorkBuddy</option>
+                    <option value="claude">Claude Code</option>
+                    <option value="qclaw">QClaw</option>
+                    <option value="qoderwork">QoderWork</option>
+                  </select>
+                  <select id="skillCapabilityFilter" aria-label="Skill 功能">
+                    <option value="all">全部功能</option>
+                  </select>
+                  <select id="skillStatusFilter" aria-label="Skill 管理状态">
+                    <option value="all">全部状态</option>
+                    <option value="active">正在使用</option>
+                    <option value="watching">重点关注</option>
+                    <option value="needs_sync">待同步</option>
+                    <option value="deprecated">准备停用</option>
+                    <option value="">未设置</option>
+                  </select>
+                  <label class="skill-favorite-filter"><input id="skillFavoriteFilter" type="checkbox"> 只看收藏</label>
+                </div>
+                <div id="skillList" class="skill-list" aria-live="polite">
+                  <p class="muted">正在读取 Skill 目录…</p>
+                </div>
+              </aside>
+              <main id="skillDetailPane" class="skill-detail-pane">
+                <div class="empty-detail">
+                  <span class="empty-index">S</span>
+                  <h2>选择一个 Skill</h2>
+                  <p>查看它来自哪里、能做什么、被哪些项目使用，以及各 Agent 副本是否一致。</p>
+                </div>
+              </main>
+            </div>
+          </div>
+        </section>
+
+        <section id="assetsView" class="app-view" aria-label="成果库">
+          <div class="assets-page">
+            <div class="page-heading assets-heading">
+              <div>
+                <p class="eyebrow">KNOWLEDGE &amp; CONTINUATION</p>
+                <h2>成果库</h2>
+                <p>把摘要变成可审核的知识，把项目整理成可带走、可续接的上下文。</p>
+              </div>
+              <div class="privacy-badge">原始对话只读 · 模型不会自动调用</div>
+            </div>
+
+            <div class="assets-grid">
+              <section class="asset-card knowledge-card">
+                <div class="asset-card-head">
+                  <div><span class="settings-index">01</span><h3>知识收件箱</h3><p>模型或规则只能提出候选，由你确认后才成为长期知识。</p></div>
+                  <div class="knowledge-counts">
+                    <span>待审核 <b id="knowledgePendingCount">0</b></span>
+                    <span>已确认 <b id="knowledgeApprovedCount">0</b></span>
+                  </div>
+                </div>
+                <div class="asset-toolbar">
+                  <select id="knowledgeProjectFilter" aria-label="知识所属项目">
+                    <option value="">全部项目</option>
+                  </select>
+                  <input id="knowledgeDate" type="date" aria-label="摘要日期">
+                  <select id="knowledgeStatusFilter" aria-label="知识审核状态">
+                    <option value="pending">待审核</option>
+                    <option value="approved">已确认</option>
+                    <option value="expired">已过期</option>
+                    <option value="revoked">已撤销</option>
+                    <option value="rejected">已拒绝</option>
+                    <option value="all">全部</option>
+                  </select>
+                  <button id="generateKnowledgeButton" class="button primary" type="button">从摘要提取候选</button>
+                </div>
+                <div id="knowledgeList" class="knowledge-list" aria-live="polite">
+                  <p class="muted">正在读取知识候选…</p>
+                </div>
+              </section>
+
+              <section class="asset-card export-card">
+                <div class="asset-card-head">
+                  <div><span class="settings-index">02</span><h3>导出中心</h3><p>按项目或日期导出安全的 Markdown / JSONL。</p></div>
+                </div>
+                <div class="export-fields">
+                  <label><span>导出范围</span><select id="exportScope">
+                    <option value="project">一个项目</option>
+                    <option value="day">某一天</option>
+                  </select></label>
+                  <label><span>项目</span><select id="exportProject"></select></label>
+                  <label><span>日期</span><input id="exportDate" type="date"></label>
+                  <label><span>格式</span><select id="exportFormat">
+                    <option value="markdown">Markdown</option>
+                    <option value="jsonl">结构化 JSONL</option>
+                  </select></label>
+                </div>
+                <div class="export-options">
+                  <label><input id="exportMessages" type="checkbox" checked> 对话正文</label>
+                  <label><input id="exportNotes" type="checkbox" checked> 标签与备注</label>
+                  <label><input id="exportKnowledge" type="checkbox" checked> 已确认知识</label>
+                </div>
+                <div class="asset-actions">
+                  <button id="previewExportButton" class="button secondary" type="button">生成预览</button>
+                  <button id="downloadExportButton" class="button primary" type="button" disabled>下载文件</button>
+                  <span id="exportState" class="muted"></span>
+                </div>
+                <textarea id="exportPreview" class="asset-preview" rows="14" readonly placeholder="导出预览会显示在这里"></textarea>
+              </section>
+
+              <section class="asset-card context-card">
+                <div class="asset-card-head">
+                  <div><span class="settings-index">03</span><h3>Context Pack · 任务续接包</h3><p>用已确认知识、项目摘要和证据索引，为下一个 Agent 准备紧凑上下文。</p></div>
+                  <span id="contextPackMetrics" class="muted"></span>
+                </div>
+                <details id="contextPackDetails" class="asset-collapsible">
+                  <summary>打开续接包生成器</summary>
+                  <div class="asset-toolbar context-toolbar">
+                    <select id="contextProject" aria-label="续接项目"></select>
+                    <select id="contextDestination" aria-label="目标 Agent">
+                      <option value="通用 Agent">通用 Agent</option>
+                      <option value="Codex">Codex</option>
+                      <option value="Hermes">Hermes</option>
+                      <option value="WorkBuddy">WorkBuddy</option>
+                      <option value="Claude Code">Claude Code</option>
+                      <option value="CodePilot">CodePilot</option>
+                      <option value="Cursor">Cursor</option>
+                      <option value="Marvis">Marvis</option>
+                      <option value="QClaw">QClaw</option>
+                      <option value="QoderWork">QoderWork</option>
+                    </select>
+                    <input id="contextDate" type="date" aria-label="项目摘要日期">
+                    <button id="generateContextPackButton" class="button primary" type="button">生成并预览</button>
+                  </div>
+                  <div class="context-layout">
+                    <textarea id="contextPackPreview" class="asset-preview" rows="18" placeholder="这里会显示可编辑的续接包。生成后可人工删改，再复制或下载。"></textarea>
+                    <aside class="context-safety">
+                      <strong>交接前检查</strong>
+                      <ul>
+                        <li>只使用已确认知识</li>
+                        <li>不包含系统提示、推理和工具输出</li>
+                        <li>常见密钥样式会自动脱敏</li>
+                        <li>不会自动发送给任何模型</li>
+                      </ul>
+                      <button id="copyContextPackButton" class="button secondary" type="button" disabled>复制 Markdown</button>
+                      <button id="downloadContextPackButton" class="button ghost" type="button" disabled>下载 Markdown</button>
+                      <button id="downloadContextJsonButton" class="button ghost" type="button" disabled>下载 JSON</button>
+                    </aside>
+                  </div>
+                </details>
+              </section>
+
+              <section class="asset-card activity-card">
+                <div class="asset-card-head">
+                  <div><span class="settings-index">04</span><h3>运行与成果账本</h3><p>记录 Hub 自身的生成、审核和项目操作；只保存元数据、状态与成果指纹。</p></div>
+                  <span id="activitySummary" class="muted"></span>
+                </div>
+                <details id="activityDetails" class="asset-collapsible">
+                  <summary>查看高级审计与成果元数据</summary>
+                  <div class="asset-toolbar activity-toolbar">
+                    <select id="activityProjectFilter" aria-label="账本所属项目">
+                      <option value="">全部项目</option>
+                    </select>
+                    <select id="activityKindFilter" aria-label="操作类型">
+                      <option value="">全部操作</option>
+                      <option value="export">导出</option>
+                      <option value="context_pack">续接包</option>
+                      <option value="knowledge_extract">知识提取</option>
+                      <option value="knowledge_review">知识审核</option>
+                      <option value="project_assign">项目归类</option>
+                      <option value="project_merge">项目合并</option>
+                      <option value="file_scan">文件扫描</option>
+                      <option value="artifact_pin">成果确认</option>
+                      <option value="daily_summary">每日摘要</option>
+                      <option value="project_summary">项目摘要</option>
+                    </select>
+                    <button id="refreshActivityButton" class="button secondary" type="button">刷新账本</button>
+                  </div>
+                  <div class="activity-layout">
+                    <div>
+                      <h4>最近操作</h4>
+                      <div id="activityRunList" class="activity-run-list"></div>
+                    </div>
+                    <div>
+                      <h4>成果元数据</h4>
+                      <div id="activityArtifactList" class="activity-artifact-list"></div>
+                    </div>
+                  </div>
+                </details>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section id="settingsView" class="app-view" aria-label="设置">
+          <div class="settings-page">
+            <div class="page-heading">
+              <p class="eyebrow">LOCAL SETTINGS</p>
+              <h2>设置</h2>
+              <p>管理本机索引与摘要模型。原始对话始终保持只读。</p>
+            </div>
+            <div class="settings-grid">
+              <section class="settings-card">
+                <span class="settings-index">01</span>
+                <h3>摘要模型</h3>
+                <p>配置 OpenAI 兼容接口，仅在你主动生成日报时调用。</p>
+                <button id="modelSettingsButton" class="button primary" type="button">配置模型接口</button>
+              </section>
+              <section class="settings-card">
+                <span class="settings-index">02</span>
+                <h3>数据源质量中心</h3>
+                <p>检查适配器、结构指纹、正文完整度和持久搜索索引。</p>
+                <div class="settings-card-actions">
+                  <button id="diagnoseSourcesButton" class="button secondary" type="button">运行兼容性检查</button>
+                  <button id="openSetupButton" class="button ghost" type="button">配置路径</button>
+                </div>
+              </section>
+              <section class="settings-card">
+                <span class="settings-index">03</span>
+                <h3>管理数据备份</h3>
+                <p>导出收藏、备注、项目与知识库。不会包含 API 密钥或原始对话。</p>
+                <div class="settings-card-actions">
+                  <button id="exportBackupButton" class="button secondary" type="button">导出备份</button>
+                  <label class="button ghost file-button">导入预览<input id="backupFileInput" type="file" accept=".json,application/json" hidden></label>
+                </div>
+                <div id="backupState" class="muted"></div>
+              </section>
+              <section class="settings-card">
+                <span class="settings-index">04</span>
+                <h3>安全更新</h3>
+                <p>从 HTTPS 清单检查更新；下载后校验 SHA-256，绝不自动执行。</p>
+                <input id="updateManifestUrl" type="url" placeholder="GitHub Release manifest.json 地址">
+                <label><input id="updateAutoCheck" type="checkbox"> 启动时提醒检查</label>
+                <div class="settings-card-actions">
+                  <button id="saveUpdateSettingsButton" class="button ghost" type="button">保存</button>
+                  <button id="checkUpdateButton" class="button secondary" type="button">检查更新</button>
+                </div>
+                <div id="updateState" class="muted"></div>
+              </section>
+              <section class="settings-card">
+                <span class="settings-index">05</span>
+                <h3>外观主题</h3>
+                <p>内置 Codex 热门换肤风格，完全本地、即时切换并记住选择。</p>
+                <button id="openThemeSettingsButton" class="button secondary" type="button">选择皮肤</button>
+              </section>
+            </div>
+            <section class="source-health-card">
+              <div><h3>数据源质量报告</h3><p id="sourceQualitySummary">路径、完整度、结构兼容性与索引消息数</p></div>
+              <div id="sourceHealth" class="source-health"><span class="muted">进入设置后读取状态…</span></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="detailTemplate">
+      <div class="detail-inner">
+        <section class="conversation-search-panel" aria-label="在当前对话中搜索">
+          <label>
+            <span class="search-mark"></span>
+            <input class="conversation-search-input" type="search"
+              placeholder="在当前对话中搜索…" autocomplete="off">
+          </label>
+          <div class="conversation-search-nav">
+            <span class="conversation-search-state">输入关键词</span>
+            <button class="conversation-search-previous" type="button" title="上一个匹配" disabled>↑</button>
+            <button class="conversation-search-next" type="button" title="下一个匹配" disabled>↓</button>
+            <button class="conversation-search-clear" type="button" title="清除搜索" disabled>×</button>
+          </div>
+        </section>
+        <div class="detail-head">
+          <div><div class="source-line"></div><h2 class="detail-title"></h2><p class="detail-meta"></p></div>
+          <div class="detail-head-actions">
+            <button class="favorite-button" type="button" aria-label="收藏"></button>
+            <button class="detail-close-button" type="button" aria-label="收起对话内容" title="收起对话内容">×</button>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <a class="button primary open-link" href="#">在客户端打开</a>
+          <button class="button secondary copy-id" type="button">复制 ID</button>
+          <button class="button ghost export-conversation" type="button">导出 Markdown</button>
+        </div>
+        <section class="overview-block">
+          <h3>可追溯概览</h3><dl class="overview"></dl>
+        </section>
+        <section class="note-block">
+          <div class="section-heading"><h3>我的管理信息</h3><span class="save-state muted"></span></div>
+          <select class="user-status" aria-label="自定义状态">
+            <option value="">未设置状态</option><option value="todo">待继续</option><option value="done">已完成</option>
+            <option value="reference">重要参考</option><option value="archive_candidate">可归档候选</option>
+          </select>
+          <label class="detail-project-field">
+            <span>项目归属</span>
+            <select class="project-assignment" aria-label="项目归属">
+              <option value="">未归属项目</option>
+            </select>
+          </label>
+          <input class="tags-input" type="text" placeholder="标签，用逗号分隔">
+          <textarea class="note-input" rows="4" placeholder="记录结论、下一步或为什么值得保留…"></textarea>
+          <button class="button secondary save-note" type="button">保存备注</button>
+        </section>
+        <section class="related-block" hidden>
+          <div class="section-heading"><h3>跨 Agent 相关对话</h3><span class="related-count muted"></span></div>
+          <div class="related-conversations"></div>
+        </section>
+        <section class="messages-block">
+          <div class="messages-heading"><h3>最近上下文</h3><span class="message-count muted"></span></div>
+          <div class="message-tools">
+            <div class="segments message-role-filter" role="group" aria-label="消息角色">
+              <button class="segment active" data-role="all" type="button">全部</button>
+              <button class="segment" data-role="user" type="button">用户</button>
+              <button class="segment" data-role="assistant" type="button">助手</button>
+            </div>
+          </div>
+          <div class="messages"></div>
+        </section>
+      </div>
+    </template>
+
+    <dialog id="setupDialog" class="settings-dialog setup-dialog" aria-labelledby="setupTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">FIRST-RUN SETUP</p><h2 id="setupTitle">连接本机对话数据</h2></div>
+          <button id="closeSetupButton" class="button ghost" type="button">稍后设置</button>
+        </div>
+        <p class="muted">自动发现只检查数据库结构和对话数量；不会读取或上传对话正文。也可以直接粘贴路径。</p>
+        <div class="setup-fields">
+          <label><span>Hermes 数据库（state.db）</span><input id="setupHermesPath" type="text" placeholder="例如 ~/.hermes/state.db，也可粘贴完整路径"></label>
+          <label><span>Codex 数据库（state_5.sqlite）</span><input id="setupCodexPath" type="text" placeholder="通常位于当前用户的 .codex 目录"></label>
+          <label><span>WorkBuddy 目录</span><input id="setupWorkbuddyPath" type="text" placeholder="包含 workbuddy.db 和 projects 文件夹"></label>
+          <label><span>额外搜索目录（可选）</span><input id="setupExtraRoot" type="text" placeholder="例如 ~/AI；只在点击自动发现时扫描"></label>
+        </div>
+        <section class="setup-extra-section">
+          <div>
+            <strong>扩展 Agent</strong>
+            <span>勾选后才会建立索引；路径可以在首次配置或以后随时修改。</span>
+          </div>
+          <div id="setupExtraSources" class="setup-extra-sources"></div>
+        </section>
+        <section class="setup-custom-section">
+          <div class="setup-custom-head">
+            <div>
+              <strong>自定义 Agent</strong>
+              <span>添加任意本地 Agent；支持 JSONL、带角色标题的 Markdown 导出和常见 SQLite 会话库。</span>
+            </div>
+            <button id="addCustomSourceButton" class="button ghost" type="button">＋ 添加 Agent</button>
+          </div>
+          <div id="setupCustomSources" class="setup-custom-sources"></div>
+          <p class="muted setup-custom-note">只读取用户与助手正文；系统提示、推理、工具调用和子任务会被过滤。SQLite 必须能识别会话 ID、角色和正文字段。</p>
+        </section>
+        <div id="setupSourceState" class="setup-source-state"></div>
+        <p id="setupDataDir" class="muted"></p>
+        <div class="settings-dialog-actions">
+          <button id="discoverSourcesButton" class="button secondary" type="button">自动发现</button>
+          <button id="saveSourcesButton" class="button primary" type="button">验证并开始使用</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="modelSettingsDialog" class="settings-dialog" aria-labelledby="modelSettingsTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">SUMMARY MODEL</p><h2 id="modelSettingsTitle">摘要模型设置</h2></div>
+          <button id="closeModelSettingsButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <p class="muted">模型列表读取不会产生对话请求；只有你主动测试连接或生成摘要时才调用模型。</p>
+        <label class="settings-toggle">
+          <input id="summaryModelEnabled" type="checkbox">
+          <span><strong>启用模型摘要</strong><small>允许日报按钮调用下面配置的模型</small></span>
+        </label>
+
+        <section class="model-settings-section">
+          <div class="model-settings-heading">
+            <div><strong>01 · 模型服务</strong><span>连接 OpenAI Chat Completions 兼容接口</span></div>
+            <span id="summaryConnectionBadge" class="connection-badge">尚未诊断</span>
+          </div>
+          <div class="settings-fields">
+            <label><span>服务预设</span><select id="summaryProviderPreset">
+              <option value="paratera">Paratera MaaS</option>
+              <option value="ollama">Ollama 本机</option>
+              <option value="lmstudio">LM Studio 本机</option>
+              <option value="openai">OpenAI API</option>
+              <option value="custom">自定义 OpenAI 兼容接口</option>
+            </select></label>
+            <label><span>接口地址</span><input id="summaryApiUrl" type="url" placeholder="例如：https://llmapi.paratera.com/v1" autocomplete="off"></label>
+            <label class="settings-field-wide"><span>API 密钥</span><input id="summaryApiKey" type="password" placeholder="留空则保留已保存密钥" autocomplete="new-password"></label>
+          </div>
+          <div class="secret-state">
+            <span id="summarySecretState" class="muted">尚未读取密钥状态</span>
+            <label><input id="clearSummaryApiKey" type="checkbox"> 清除已保存的密钥</label>
+          </div>
+        </section>
+
+        <section class="model-settings-section">
+          <div class="model-settings-heading">
+            <div><strong>02 · 账号可用模型</strong><span id="summaryModelCatalogState">尚未读取模型列表</span></div>
+            <button id="discoverSummaryModelsButton" class="button secondary" type="button">读取模型列表</button>
+          </div>
+          <div class="model-library-tools">
+            <input id="summaryModelSearch" type="search" placeholder="搜索模型名称或系列">
+            <select id="summaryCapabilityFilter" aria-label="模型能力">
+              <option value="summary">适合文本摘要</option>
+              <option value="all">全部能力</option>
+              <option value="text">文本对话</option>
+              <option value="reasoning">深度推理</option>
+              <option value="coding">代码</option>
+              <option value="vision">视觉理解</option>
+              <option value="embedding">Embedding</option>
+              <option value="image">图片生成</option>
+              <option value="video">视频生成</option>
+            </select>
+          </div>
+          <div id="summaryModelList" class="model-library">
+            <p class="muted">连接服务后读取这把密钥实际可用的模型。</p>
+          </div>
+        </section>
+
+        <section class="model-settings-section">
+          <div class="model-settings-heading">
+            <div><strong>03 · 每日回顾路由</strong><span>选择主模型、备用模型和生成参数</span></div>
+          </div>
+          <div class="settings-fields">
+            <label><span>主模型</span><input id="summaryModelName" list="summaryModelOptions" type="text" placeholder="从上方选择或手动填写模型 ID" autocomplete="off"></label>
+            <label><span>备用模型</span><input id="summaryFallbackModel" list="summaryModelOptions" type="text" placeholder="可选；主模型失败时自动切换" autocomplete="off"></label>
+            <label><span>Temperature</span><input id="summaryTemperature" type="number" min="0" max="1" step="0.05" value="0.2"></label>
+            <label><span>最大输出 Token</span><input id="summaryMaxTokens" type="number" min="256" max="8192" step="128" value="2400"></label>
+            <label><span>超时时间（秒）</span><input id="summaryTimeout" type="number" min="10" max="300" step="5" value="120"></label>
+          </div>
+          <datalist id="summaryModelOptions"></datalist>
+        </section>
+
+        <div class="settings-status-row">
+          <p id="modelSecretStorage" class="settings-security muted">密钥使用系统凭据库按当前用户保护，不会返回浏览器，也不会写入 sources.json。</p>
+          <div id="summaryModelTestState" class="settings-test-state muted"></div>
+        </div>
+        <div class="settings-dialog-actions">
+          <button id="testSummaryModelButton" class="button secondary" type="button">测试主模型</button>
+          <button id="saveSummaryModelButton" class="button primary" type="button">保存设置</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="classificationDialog" class="settings-dialog classification-dialog" aria-labelledby="classificationTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">PROJECT CLASSIFICATION</p><h2 id="classificationTitle">批量归类与项目合并</h2></div>
+          <button id="closeClassificationButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <div class="classification-toolbar">
+          <select id="classificationMode">
+            <option value="unassigned">未归属对话</option>
+            <option value="pending">待确认归类</option>
+            <option value="project">当前项目全部对话</option>
+          </select>
+          <input id="classificationSearch" type="search" placeholder="搜索标题、工作区或归类原因">
+          <button id="selectAllClassificationButton" class="button ghost" type="button">全选当前结果</button>
+        </div>
+        <div id="classificationList" class="classification-list" aria-live="polite"></div>
+        <div class="classification-batch">
+          <select id="classificationTargetProject" aria-label="目标项目"></select>
+          <button id="assignClassificationButton" class="button primary" type="button">批量归入并锁定</button>
+          <span id="classificationState" class="muted"></span>
+        </div>
+        <section class="merge-projects">
+          <div><strong>合并当前项目</strong><p>旧项目会成为永久别名，后续自动识别不会把它重新创建。</p></div>
+          <select id="mergeTargetProject" aria-label="合并到目标项目"></select>
+          <button id="mergeProjectButton" class="button secondary" type="button">合并到目标项目</button>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog id="projectRuleDialog" class="settings-dialog project-rule-dialog" aria-labelledby="projectRuleTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div>
+            <p class="eyebrow">CROSS-AGENT PROJECT RULE</p>
+            <h2 id="projectRuleTitle">项目自动识别规则</h2>
+          </div>
+          <button id="closeProjectRuleButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <p class="project-rule-intro">规则同时作用于 Codex、Hermes 和 WorkBuddy。人工锁定归类始终优先；保存前先预览影响。</p>
+        <div class="project-rule-grid">
+          <label>
+            <span>包含关键词</span>
+            <textarea id="projectRuleIncludes" rows="4" placeholder="每行或逗号分隔，如：AI 对话中心, conversation hub"></textarea>
+            <small>标题、摘要、备注和标签会按位置加权。</small>
+          </label>
+          <label>
+            <span>排除关键词</span>
+            <textarea id="projectRuleExcludes" rows="4" placeholder="命中任一项即排除，如：股票, 日报"></textarea>
+            <small>用于避免同名词或宽泛关键词造成误归类。</small>
+          </label>
+          <label>
+            <span>工作区别名</span>
+            <textarea id="projectRuleWorkspaces" rows="3" placeholder="不同 Agent 使用的项目目录名，如：conversation_hub_v5"></textarea>
+            <small>适合 Codex 与 Hermes 对同一项目使用不同工作区名称。</small>
+          </label>
+          <label>
+            <span>路径特征</span>
+            <textarea id="projectRulePaths" rows="3" placeholder="路径中稳定存在的片段，如：/hermes_agent/conversation_hub"></textarea>
+            <small>忽略盘符与斜杠差异，按路径片段匹配。</small>
+          </label>
+        </div>
+        <div class="project-rule-options">
+          <label><input id="projectRuleEnabled" type="checkbox" checked> 启用自动识别</label>
+          <label>最低置信度 <input id="projectRuleMinScore" type="number" min="0.50" max="0.99" step="0.01" value="0.78"></label>
+        </div>
+        <section id="projectRulePreview" class="project-rule-preview">
+          <p class="muted">点击“预览影响”，查看三个 Agent 中会新增、移动或发生冲突的对话。</p>
+        </section>
+        <div class="settings-dialog-actions">
+          <button id="suggestProjectRuleButton" class="button ghost" type="button">从已归类对话生成建议</button>
+          <button id="previewProjectRuleButton" class="button secondary" type="button">预览影响</button>
+          <button id="saveProjectRuleButton" class="button primary" type="button" disabled>保存并应用</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="themeDialog" class="settings-dialog theme-dialog" aria-labelledby="themeDialogTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div>
+            <p class="eyebrow">LOCAL THEME STUDIO</p>
+            <h2 id="themeDialogTitle">选择对话中心皮肤</h2>
+          </div>
+          <button id="closeThemeButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <p class="muted">主题只改变本中心外观，不注入或修改 Codex。背景为原创 CSS，不包含人物、动漫或第三方素材。</p>
+        <div id="themeGallery" class="theme-gallery">
+          <button class="theme-card" data-theme-id="dream-glass" type="button">
+            <span class="theme-preview dream-glass"><i></i><i></i><i></i></span>
+            <span><strong>梦境流光</strong><small>Codex Dream Skin 热门玻璃风格</small></span>
+          </button>
+          <button class="theme-card" data-theme-id="violet-night" type="button">
+            <span class="theme-preview violet-night"><i></i><i></i><i></i></span>
+            <span><strong>紫夜星云</strong><small>深色 · 霓虹紫蓝</small></span>
+          </button>
+          <button class="theme-card" data-theme-id="warm-paper" type="button">
+            <span class="theme-preview warm-paper"><i></i><i></i><i></i></span>
+            <span><strong>温暖纸张</strong><small>Claude 风格 · 长时间阅读</small></span>
+          </button>
+          <button class="theme-card" data-theme-id="terminal" type="button">
+            <span class="theme-preview terminal"><i></i><i></i><i></i></span>
+            <span><strong>终端黑客</strong><small>深色 · 高对比绿</small></span>
+          </button>
+          <button class="theme-card" data-theme-id="archive" type="button">
+            <span class="theme-preview archive"><i></i><i></i><i></i></span>
+            <span><strong>档案纸张</strong><small>当前经典主题</small></span>
+          </button>
+        </div>
+        <div class="theme-dialog-footer">
+          <span id="themeSelectionState" class="muted"></span>
+          <button id="resetThemeButton" class="button ghost" type="button">恢复经典主题</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="knowledgeHistoryDialog" class="settings-dialog knowledge-history-dialog" aria-labelledby="knowledgeHistoryTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">MEMORY AUDIT</p><h2 id="knowledgeHistoryTitle">知识修订与证据</h2></div>
+          <button id="closeKnowledgeHistoryButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <div id="knowledgeHistoryBody" class="knowledge-history-body">
+          <p class="muted">正在读取修订历史…</p>
+        </div>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
