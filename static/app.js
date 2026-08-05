@@ -1175,11 +1175,18 @@ function renderDaily(data) {
     const today = localDateIso();
     const canPrev = data.day > "2026-01-01";
     const canNext = data.day < today;
+    // 本地日期加减（避免 toISOString 的时区坑）
+    const shiftDay = (dayStr, delta) => {
+      const [y, m, d] = dayStr.split("-").map(Number);
+      const dt = new Date(y, m - 1, d + delta);
+      return localDateIso(dt);
+    };
     brief.innerHTML = `
       <div class="brief-label">
         <div class="brief-date-nav">
           <button class="brief-date-btn" type="button" data-brief-day-prev ${canPrev ? "" : "disabled"} aria-label="前一天">‹</button>
-          <span>${escapeHtml(dayLabel(data.day))}</span>
+          <button class="brief-date-pick" type="button" data-brief-day-pick title="选择日期">${escapeHtml(dayLabel(data.day))}</button>
+          <input class="brief-date-input" type="date" max="${today}" value="${data.day}" hidden>
           <button class="brief-date-btn" type="button" data-brief-day-next ${canNext ? "" : "disabled"} aria-label="后一天">›</button>
         </div>
         <strong>${data.day === today ? "今日要点" : "当日要点"}</strong>
@@ -1192,17 +1199,13 @@ function renderDaily(data) {
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;
-    // 日期切换：‹ 前一天 / › 后一天
-    brief.querySelector("[data-brief-day-prev]")?.addEventListener("click", () => {
-      const d = new Date(data.day + "T00:00:00");
-      d.setDate(d.getDate() - 1);
-      setDailyDate(d.toISOString().slice(0, 10));
-    });
-    brief.querySelector("[data-brief-day-next]")?.addEventListener("click", () => {
-      const d = new Date(data.day + "T00:00:00");
-      d.setDate(d.getDate() + 1);
-      setDailyDate(d.toISOString().slice(0, 10));
-    });
+    // 日期切换：‹ 前一天 / › 后一天 / 点中间开日历
+    brief.querySelector("[data-brief-day-prev]")?.addEventListener("click", () => setDailyDate(shiftDay(data.day, -1)));
+    brief.querySelector("[data-brief-day-next]")?.addEventListener("click", () => setDailyDate(shiftDay(data.day, 1)));
+    const pickBtn = brief.querySelector("[data-brief-day-pick]");
+    const pickInput = brief.querySelector(".brief-date-input");
+    pickBtn?.addEventListener("click", () => pickInput?.showPicker?.() || pickInput?.click());
+    pickInput?.addEventListener("change", () => { if (pickInput.value && pickInput.value <= today) setDailyDate(pickInput.value); });
     // 展开/收起：直接用注入的最近消息，无需请求
     brief.querySelectorAll(".brief-item").forEach((li) => {
       const box = li.querySelector(".brief-detail");

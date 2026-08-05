@@ -514,7 +514,7 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .brief-label span { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
 .brief-label strong { margin-top: 5px; font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
 /* 今日要点日期切换 */
-.brief-date-nav { display: flex; align-items: center; gap: 6px; }
+.brief-date-nav { display: flex; align-items: center; gap: 5px; }
 .brief-date-nav span { color: var(--ink-2); font-size: 10px; letter-spacing: .02em; }
 .brief-date-btn {
   width: 18px; height: 18px; padding: 0; border: 1px solid var(--line-dark);
@@ -523,6 +523,13 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 }
 .brief-date-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .brief-date-btn:disabled { opacity: .3; cursor: not-allowed; }
+.brief-date-pick {
+  border: 0; background: transparent; padding: 1px 4px; cursor: pointer;
+  color: var(--ink-2); font-size: 10px; letter-spacing: .02em;
+  border-radius: 4px; border-bottom: 1px dotted var(--line-dark);
+}
+.brief-date-pick:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.brief-date-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .status-badge {
   flex: 0 0 auto;
   padding: 1px 7px;
