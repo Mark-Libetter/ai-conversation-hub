@@ -1130,42 +1130,39 @@ function renderDaily(data) {
     const achievements = summary.achievements || [];
     const unfinishedList = summary.unfinished || summary.ongoing || [];
     const focusKey = (focusEntry.source || "") + "/" + (focusEntry.conversation_id || focusEntry.id || "");
-    // 把所有事项拉平成平等列表：●主线(带状态) + ✓完成 + ○待继续，去重同源
+    // 所有事项平等并列：焦点 + 完成 + 待继续，去重同源（统一圆点，不区分符号/状态）
     const seenKeys = new Set();
     const items = [];
-    const add = (entry, kind) => {
+    const add = (entry, fallbackTitle) => {
       const key = (entry.source || "") + "/" + (entry.conversation_id || entry.id || "");
-      const parts = summaryItemParts(entry, kind === "focus" ? "achievement" : kind);
-      const title = kind === "focus" ? (focusEntry.text || "今日主线") : parts.title;
-      if (!title) return;
-      items.push({ title, kind, source: entry.source, conversation_id: entry.conversation_id || entry.id });
+      if (seenKeys.has(key)) return;
+      const parts = summaryItemParts(entry, "unfinished");
+      const title = (parts.title && parts.title !== entry.text ? parts.title : fallbackTitle) || "（无标题）";
+      items.push({
+        title,
+        source: entry.source,
+        conversation_id: entry.conversation_id || entry.id,
+        last_user: entry.last_user || "",
+        last_reply: entry.last_reply || "",
+      });
       seenKeys.add(key);
     };
-    if (focusEntry.text) add(focusEntry, "focus");
-    achievements.slice(0, 3).forEach((it) => {
-      const k = (it.source || "") + "/" + (it.conversation_id || it.id || "");
-      if (!seenKeys.has(k)) add(it, "achievement");
-    });
-    unfinishedList.slice(0, 3).forEach((it) => {
-      const k = (it.source || "") + "/" + (it.conversation_id || it.id || "");
-      if (!seenKeys.has(k)) add(it, "unfinished");
-    });
-    const markOf = { focus: "●", achievement: "✓", unfinished: "○" };
-    const statusLabel = { done: "已完成", ongoing: "进行中", blocked: "受阻" };
-    const focusStatus = focusEntry.status || "ongoing";
+    if (focusEntry.text) add(focusEntry, focusEntry.text);
+    unfinishedList.slice(0, 4).forEach((it) => add(it, summaryItemParts(it, "unfinished").title || "待继续"));
+    achievements.slice(0, 3).forEach((it) => add(it, summaryItemParts(it, "achievement").title || "已完成"));
     const totalItems = achievements.length + unfinishedList.length;
     const itemLi = (it) => {
-      const badge = it.kind === "focus"
-        ? `<span class="status-badge status-${focusStatus}">${statusLabel[focusStatus] || "进行中"}</span>`
-        : "";
-      return `<li class="brief-item ${it.kind}" data-src="${escapeHtml(it.source)}" data-cid="${escapeHtml(it.conversation_id)}" tabindex="0">
+      const hasMsg = !!(it.last_user || it.last_reply);
+      return `<li class="brief-item"${hasMsg ? ' tabindex="0"' : ""}>
         <span class="brief-row">
-          <span class="brief-mark">${markOf[it.kind]}</span>
+          <span class="brief-dot" aria-hidden="true"></span>
           <span class="brief-title">${escapeHtml(it.title)}</span>
-          ${badge}
-          <span class="brief-toggle" aria-hidden="true">▾</span>
+          ${hasMsg ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}
         </span>
-        <div class="brief-detail" hidden></div>
+        ${hasMsg ? `<div class="brief-detail" hidden>${[
+          it.last_user ? `<div class="brief-msg user"><b>你最近说</b><span>${escapeHtml(it.last_user)}</span></div>` : "",
+          it.last_reply ? `<div class="brief-msg assistant"><b>最近回复</b><span>${escapeHtml(it.last_reply)}</span></div>` : "",
+        ].join("")}</div>` : ""}
       </li>`;
     };
     brief.innerHTML = `
@@ -1177,45 +1174,17 @@ function renderDaily(data) {
         <ul class="brief-points-list">${items.map(itemLi).join("")}</ul>
       </div>
       <div class="brief-actions">
-        <span><b>${totalItems}</b> 件事 · <b>${achievements.length}</b> 完成 · <b>${unfinishedList.length}</b> 待继续</span>
+        <span><b>${totalItems}</b> 件事</span>
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;
-    // 点击展开：按需拉取该对话最近消息，显示最近用户消息 + 助手回复
+    // 展开/收起：直接用注入的最近消息，无需请求
     brief.querySelectorAll(".brief-item").forEach((li) => {
-      const toggle = async () => {
-        const box = li.querySelector(".brief-detail");
-        if (li.classList.contains("expanded")) {
-          li.classList.remove("expanded");
-          box.hidden = true;
-          return;
-        }
-        // 首次展开：异步加载对话原文
-        if (!box.dataset.loaded) {
-          box.innerHTML = `<p class="brief-loading-text">读取最近对话…</p>`;
-          box.hidden = false;
-          const src = li.dataset.src, cid = li.dataset.cid;
-          try {
-            const hubToken = state.token || "";
-            const res = await fetch(`/api/conversation-messages/${encodeURIComponent(src)}/${encodeURIComponent(cid)}?limit=8`, {
-              headers: hubToken ? { "X-Hub-Token": hubToken } : {},
-            });
-            const data = await res.json();
-            const msgs = (data.messages || []).filter((m) => m.text && m.text.trim());
-            // 取最近 1 条用户消息 + 1 条助手回复
-            const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-            const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
-            const parts = [];
-            if (lastUser) parts.push(`<div class="brief-msg user"><b>你最近说</b><span>${escapeHtml(lastUser.text.slice(0, 160))}</span></div>`);
-            if (lastAssistant) parts.push(`<div class="brief-msg assistant"><b>最近回复</b><span>${escapeHtml(lastAssistant.text.slice(0, 220))}</span></div>`);
-            box.innerHTML = parts.length ? parts.join("") : `<p class="brief-loading-text">该对话暂无可读消息</p>`;
-          } catch (e) {
-            box.innerHTML = `<p class="brief-loading-text">读取失败，点击重试</p>`;
-          }
-          box.dataset.loaded = "1";
-        }
-        li.classList.add("expanded");
-        box.hidden = false;
+      const box = li.querySelector(".brief-detail");
+      if (!box) return;
+      const toggle = () => {
+        const open = li.classList.toggle("expanded");
+        box.hidden = !open;
       };
       li.addEventListener("click", toggle);
       li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });

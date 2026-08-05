@@ -525,30 +525,29 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .status-done { background: var(--teal-soft); color: #21685f; }
 .status-ongoing { background: #e3edf6; color: #2c5f8d; }
 .status-blocked { background: #f4ddd6; color: #8a4639; }
-/* 今日要点：平等的事项列表（无父子关系） */
-.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+/* 今日要点：平等的事项列表（统一圆点，无分类符号/状态） */
+.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .brief-item {
-  min-width: 0; cursor: pointer; outline: none;
-  padding: 2px 0; border-radius: 4px;
+  min-width: 0; cursor: pointer; outline: none; padding: 2px 0; border-radius: 4px;
 }
-.brief-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.brief-row { display: flex; gap: 7px; align-items: center; min-width: 0; }
+.brief-dot {
+  flex: 0 0 auto; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--line-dark); margin-top: 5px;
+}
+.brief-item:hover .brief-dot, .brief-item:focus .brief-dot, .brief-item.expanded .brief-dot { background: var(--accent); }
 .brief-title {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto;
   font-size: 11.5px; line-height: 1.4; color: var(--ink);
 }
 .brief-item:focus .brief-title, .brief-item:hover .brief-title { color: var(--accent); }
-.brief-mark { flex: 0 0 auto; font-size: 11px; }
-.brief-item.focus .brief-mark { color: var(--accent); }
-.brief-item.achievement .brief-mark { color: #21685f; }
-.brief-item.unfinished .brief-mark { color: #8a542d; }
-.brief-item .status-badge { flex: 0 0 auto; }
 .brief-toggle {
   flex: 0 0 auto; color: var(--muted); font-size: 9px;
   transition: transform .15s ease;
 }
 .brief-item.expanded .brief-toggle { transform: rotate(180deg); color: var(--accent); }
-/* 展开区：最近对话原文 */
-.brief-detail { margin: 5px 0 4px 17px; }
+/* 展开区：最近对话原文（后端注入，无需请求） */
+.brief-detail { margin: 5px 0 4px 11px; }
 .brief-msg {
   padding: 5px 8px; margin-bottom: 3px; border-radius: 0 6px 6px 0;
   font-size: 10px; line-height: 1.5;
@@ -562,8 +561,6 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .brief-msg.user b { color: var(--muted); }
 .brief-msg.assistant { border-left: 2px solid var(--codex); background: var(--teal-pale); }
 .brief-msg.assistant b { color: var(--codex); }
-.brief-loading-text { margin: 0; padding: 4px 8px; font-size: 10px; color: var(--muted); }
-.brief-empty { margin: 4px 0 0; font-size: 10px; }
 .brief-actions { display: grid; gap: 7px; justify-items: stretch; }
 .brief-actions > span { color: var(--muted); font-size: 8px; text-align: center; }
 .brief-actions > span b { color: var(--ink-2); }

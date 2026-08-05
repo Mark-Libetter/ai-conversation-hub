@@ -3728,6 +3728,14 @@ class ConversationIndex:
             result["reason"] = clean_text(reason, 300)
         if next_action:
             result["next_action"] = clean_text(next_action, 300)
+        # 注入最近对话原文（供前端展开直接展示，无需再请求）
+        msgs = entry.get("messages") or []
+        last_user = next((m["text"] for m in reversed(msgs) if m.get("role") == "user"), "")
+        last_asst = next((m["text"] for m in reversed(msgs) if m.get("role") == "assistant"), "")
+        if last_user:
+            result["last_user"] = clean_text(last_user, 200)
+        if last_asst:
+            result["last_reply"] = clean_text(last_asst, 280)
         return result
 
     @staticmethod
@@ -3908,6 +3916,10 @@ class ConversationIndex:
             all_messages = [message["text"] for message in entry["messages"]]
             title = clean_text(entry["title"], 120)
             topic = readable_topic(title, request)
+            # 无效 topic（太短/省略号/口语碎片）回退到对话标题，避免"你看一下…"这类无意义事项
+            stripped_topic = re.sub(r"[….\s]+", "", topic)
+            if len(stripped_topic) < 5 or topic.endswith(("…", "...", "。")):
+                topic = title or topic
             repeated_request = request and (
                 request.casefold() in title.casefold() or title.casefold() in request.casefold()
             )
