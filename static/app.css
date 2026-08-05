@@ -525,41 +525,44 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .status-done { background: var(--teal-soft); color: #21685f; }
 .status-ongoing { background: #e3edf6; color: #2c5f8d; }
 .status-blocked { background: #f4ddd6; color: #8a4639; }
-/* 主线标题：和要点统一字号 */
-.brief-main { margin: 0 0 7px; }
-.brief-main-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.brief-main-title {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-  font-family: Georgia, "Songti SC", serif; font-size: 13px; font-weight: 600; color: var(--ink);
+/* 今日要点：平等的事项列表（无父子关系） */
+.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.brief-item {
+  min-width: 0; cursor: pointer; outline: none;
+  padding: 2px 0; border-radius: 4px;
 }
-.brief-main.expandable, .brief-item.expandable { cursor: pointer; outline: none; }
-.brief-main.expandable:hover .brief-main-title, .brief-item.expandable:hover .brief-title { color: var(--accent); }
-/* 要点列表：字号统一为 11px（和主线视觉层级协调） */
-.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.brief-item { min-width: 0; }
-.brief-row { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.brief-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .brief-title {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-  font-size: 11px; line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto;
+  font-size: 11.5px; line-height: 1.4; color: var(--ink);
 }
+.brief-item:focus .brief-title, .brief-item:hover .brief-title { color: var(--accent); }
 .brief-mark { flex: 0 0 auto; font-size: 11px; }
-.brief-item.done { color: var(--ink-2); }
-.brief-item.done .brief-mark { color: #21685f; }
-.brief-item.open { color: var(--muted); }
-.brief-item.open .brief-mark { color: #8a542d; }
-/* 展开标记 ▾ + 折叠详情 */
+.brief-item.focus .brief-mark { color: var(--accent); }
+.brief-item.achievement .brief-mark { color: #21685f; }
+.brief-item.unfinished .brief-mark { color: #8a542d; }
+.brief-item .status-badge { flex: 0 0 auto; }
 .brief-toggle {
-  flex: 0 0 auto; margin-left: auto; color: var(--muted);
-  font-size: 10px; transition: transform .15s ease;
+  flex: 0 0 auto; color: var(--muted); font-size: 9px;
+  transition: transform .15s ease;
 }
-.expanded .brief-toggle { transform: rotate(180deg); color: var(--accent); }
-.brief-detail {
-  display: none; margin: 4px 0 5px 17px; padding: 6px 9px;
-  border-left: 2px solid var(--teal-soft); background: var(--teal-pale);
-  border-radius: 0 6px 6px 0;
-  font-size: 10.5px; line-height: 1.5; color: var(--ink-2);
+.brief-item.expanded .brief-toggle { transform: rotate(180deg); color: var(--accent); }
+/* 展开区：最近对话原文 */
+.brief-detail { margin: 5px 0 4px 17px; }
+.brief-msg {
+  padding: 5px 8px; margin-bottom: 3px; border-radius: 0 6px 6px 0;
+  font-size: 10px; line-height: 1.5;
 }
-.expanded > .brief-detail, .expanded .brief-detail { display: block; }
+.brief-msg b { display: block; font-size: 8.5px; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
+.brief-msg span {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; color: var(--ink-2); word-break: break-word;
+}
+.brief-msg.user { border-left: 2px solid #c6c8bf; background: rgba(0,0,0,.025); }
+.brief-msg.user b { color: var(--muted); }
+.brief-msg.assistant { border-left: 2px solid var(--codex); background: var(--teal-pale); }
+.brief-msg.assistant b { color: var(--codex); }
+.brief-loading-text { margin: 0; padding: 4px 8px; font-size: 10px; color: var(--muted); }
 .brief-empty { margin: 4px 0 0; font-size: 10px; }
 .brief-actions { display: grid; gap: 7px; justify-items: stretch; }
 .brief-actions > span { color: var(--muted); font-size: 8px; text-align: center; }

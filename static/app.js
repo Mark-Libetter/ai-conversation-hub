@@ -1127,72 +1127,98 @@ function renderDaily(data) {
   const brief = $("#findDailyBrief");
   if (brief) {
     const focusEntry = summary.main_focus?.[0] || {};
-    const focus = focusEntry.text || "今天没有识别到唯一主线";
-    const focusStatus = focusEntry.status || "ongoing";
-    const focusKey = (focusEntry.source || "") + (focusEntry.conversation_id || focusEntry.id || "");
-    const statusLabel = { done: "已完成", ongoing: "进行中", blocked: "受阻" }[focusStatus] || "进行中";
     const achievements = summary.achievements || [];
     const unfinishedList = summary.unfinished || summary.ongoing || [];
-    // 主线详情：从同源的 achievement/unfinished 里取 detail，让焦点也能展开说明
-    const focusDetailSrc =
-      achievements.concat(unfinishedList).find((it) =>
-        ((it.source || "") + (it.conversation_id || it.id || "")) === focusKey
-      ) || {};
-    const focusParts = summaryItemParts(focusDetailSrc, focusStatus === "done" ? "achievement" : "unfinished");
-    const focusDetail = focusParts.detail || focusDetailSrc.reason || "";
-    // 要点列表：完成✓ + 待继续○，跳过和主线同源的条目；保留 detail 供展开
-    const pointParts = (items, kind, limit) => {
-      const out = [];
-      for (const it of items) {
-        const key = (it.source || "") + (it.conversation_id || it.id || "");
-        if (key && key === focusKey) continue; // 去重主线
-        const p = summaryItemParts(it, kind);
-        if (p?.title) out.push({ title: p.title, detail: p.detail || it.reason || "" });
-        if (out.length >= limit) break;
-      }
-      return out;
+    const focusKey = (focusEntry.source || "") + "/" + (focusEntry.conversation_id || focusEntry.id || "");
+    // 把所有事项拉平成平等列表：●主线(带状态) + ✓完成 + ○待继续，去重同源
+    const seenKeys = new Set();
+    const items = [];
+    const add = (entry, kind) => {
+      const key = (entry.source || "") + "/" + (entry.conversation_id || entry.id || "");
+      const parts = summaryItemParts(entry, kind === "focus" ? "achievement" : kind);
+      const title = kind === "focus" ? (focusEntry.text || "今日主线") : parts.title;
+      if (!title) return;
+      items.push({ title, kind, source: entry.source, conversation_id: entry.conversation_id || entry.id });
+      seenKeys.add(key);
     };
-    const donePoints = pointParts(achievements, "achievement", 3);
-    const openPoints = pointParts(unfinishedList, "unfinished", 2);
+    if (focusEntry.text) add(focusEntry, "focus");
+    achievements.slice(0, 3).forEach((it) => {
+      const k = (it.source || "") + "/" + (it.conversation_id || it.id || "");
+      if (!seenKeys.has(k)) add(it, "achievement");
+    });
+    unfinishedList.slice(0, 3).forEach((it) => {
+      const k = (it.source || "") + "/" + (it.conversation_id || it.id || "");
+      if (!seenKeys.has(k)) add(it, "unfinished");
+    });
+    const markOf = { focus: "●", achievement: "✓", unfinished: "○" };
+    const statusLabel = { done: "已完成", ongoing: "进行中", blocked: "受阻" };
+    const focusStatus = focusEntry.status || "ongoing";
     const totalItems = achievements.length + unfinishedList.length;
-    // 每条要点：有 detail 时可点击展开（▾ 标记 + 折叠区）
-    const pointLi = (mark, cls, p) => {
-      const hasDetail = !!p.detail;
-      return `<li class="brief-item ${cls}${hasDetail ? " expandable" : ""}"${hasDetail ? ' tabindex="0"' : ""}>
-        <span class="brief-row"><span class="brief-mark">${mark}</span><span class="brief-title">${escapeHtml(p.title)}</span>${hasDetail ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}</span>
-        ${hasDetail ? `<p class="brief-detail">${escapeHtml(p.detail)}</p>` : ""}
+    const itemLi = (it) => {
+      const badge = it.kind === "focus"
+        ? `<span class="status-badge status-${focusStatus}">${statusLabel[focusStatus] || "进行中"}</span>`
+        : "";
+      return `<li class="brief-item ${it.kind}" data-src="${escapeHtml(it.source)}" data-cid="${escapeHtml(it.conversation_id)}" tabindex="0">
+        <span class="brief-row">
+          <span class="brief-mark">${markOf[it.kind]}</span>
+          <span class="brief-title">${escapeHtml(it.title)}</span>
+          ${badge}
+          <span class="brief-toggle" aria-hidden="true">▾</span>
+        </span>
+        <div class="brief-detail" hidden></div>
       </li>`;
     };
-    const focusHasDetail = !!focusDetail;
     brief.innerHTML = `
       <div class="brief-label">
         <span>${escapeHtml(dayLabel(data.day))}</span>
         <strong>今日要点</strong>
       </div>
       <div class="brief-copy">
-        <div class="brief-main${focusHasDetail ? " expandable" : ""}"${focusHasDetail ? ' tabindex="0"' : ""}>
-          <div class="brief-main-row">
-            <strong class="brief-main-title">${escapeHtml(focus)}</strong>
-            <span class="status-badge status-${focusStatus}">${statusLabel}</span>
-            ${focusHasDetail ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}
-          </div>
-          ${focusHasDetail ? `<p class="brief-detail">${escapeHtml(focusDetail)}</p>` : ""}
-        </div>
-        ${(donePoints.length || openPoints.length) ? `<ul class="brief-points-list">
-          ${donePoints.map((p) => pointLi("✓", "done", p)).join("")}
-          ${openPoints.map((p) => pointLi("○", "open", p)).join("")}
-        </ul>` : `<p class="muted brief-empty">暂无更多要点</p>`}
+        <ul class="brief-points-list">${items.map(itemLi).join("")}</ul>
       </div>
       <div class="brief-actions">
         <span><b>${totalItems}</b> 件事 · <b>${achievements.length}</b> 完成 · <b>${unfinishedList.length}</b> 待继续</span>
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;
-    // 展开/收起交互（主线 + 各要点共用）
-    brief.querySelectorAll(".expandable").forEach((el) => {
-      const toggle = () => el.classList.toggle("expanded");
-      el.addEventListener("click", toggle);
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    // 点击展开：按需拉取该对话最近消息，显示最近用户消息 + 助手回复
+    brief.querySelectorAll(".brief-item").forEach((li) => {
+      const toggle = async () => {
+        const box = li.querySelector(".brief-detail");
+        if (li.classList.contains("expanded")) {
+          li.classList.remove("expanded");
+          box.hidden = true;
+          return;
+        }
+        // 首次展开：异步加载对话原文
+        if (!box.dataset.loaded) {
+          box.innerHTML = `<p class="brief-loading-text">读取最近对话…</p>`;
+          box.hidden = false;
+          const src = li.dataset.src, cid = li.dataset.cid;
+          try {
+            const hubToken = state.token || "";
+            const res = await fetch(`/api/conversation-messages/${encodeURIComponent(src)}/${encodeURIComponent(cid)}?limit=8`, {
+              headers: hubToken ? { "X-Hub-Token": hubToken } : {},
+            });
+            const data = await res.json();
+            const msgs = (data.messages || []).filter((m) => m.text && m.text.trim());
+            // 取最近 1 条用户消息 + 1 条助手回复
+            const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+            const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
+            const parts = [];
+            if (lastUser) parts.push(`<div class="brief-msg user"><b>你最近说</b><span>${escapeHtml(lastUser.text.slice(0, 160))}</span></div>`);
+            if (lastAssistant) parts.push(`<div class="brief-msg assistant"><b>最近回复</b><span>${escapeHtml(lastAssistant.text.slice(0, 220))}</span></div>`);
+            box.innerHTML = parts.length ? parts.join("") : `<p class="brief-loading-text">该对话暂无可读消息</p>`;
+          } catch (e) {
+            box.innerHTML = `<p class="brief-loading-text">读取失败，点击重试</p>`;
+          }
+          box.dataset.loaded = "1";
+        }
+        li.classList.add("expanded");
+        box.hidden = false;
+      };
+      li.addEventListener("click", toggle);
+      li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     });
   }
   if (data.warning) showToast(data.warning);
