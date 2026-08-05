@@ -484,6 +484,17 @@ function sourceValues(group, fallback) {
   return fallback[state.source];
 }
 
+async function loadSummary() {
+  const data = await api("/api/summary");
+  state.summary = data;
+  $("#allCount").textContent = data.total;
+  Object.keys(SOURCE_LABELS).forEach((source) => {
+    const node = $(`#${source}Count`);
+    if (node) node.textContent = data.by_source[source] || 0;
+  });
+  renderWorkspaceSummary();
+}
+
 function renderWorkspaceSummary() {
   const data = state.summary;
   if (!data) return;
@@ -1362,22 +1373,6 @@ function renderClassificationList() {
   $("#classificationState").textContent = `共 ${state.classificationItems.length} 条，当前显示 ${visible.length} 条`;
 }
 
-async function loadClassification(mode = $("#classificationMode").value) {
-  const params = new URLSearchParams({ mode, limit: "500" });
-  if (mode === "project") params.set("project_id", state.selectedProjectId);
-  const data = await api(`/api/project/classification?${params}`);
-  state.classificationItems = data.items || [];
-  renderClassificationList();
-}
-
-async function openClassification(mode = "unassigned") {
-
-  $("#classificationMode").value = mode;
-
-  $("#classificationDialog").showModal();
-  await loadClassification(mode);
-}
-
 function linesValue(values) {
   return (values || []).join("\n");
 }
@@ -1536,39 +1531,7 @@ function renderDetail(data) {
   const status = fragment.querySelector(".user-status");
   status.value = item.user_status || "";
   const projectSelect = fragment.querySelector(".project-assignment");
-  const populateProjects = (projects) => {
-    projectSelect.innerHTML = `<option value="">未归属项目</option>` + projects.map((project) =>
-      `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)} · ${project.conversation_count}</option>`
-    ).join("");
-    projectSelect.value = data.project_assignment?.project_id || "";
-  };
-  populateProjects(state.projects);
-  if (!state.projects.length) {
-    api("/api/projects").then((result) => {
-      state.projects = result.projects || [];
-      populateProjects(state.projects);
-    }).catch(() => {});
-  }
-  projectSelect.addEventListener("change", async () => {
-    projectSelect.disabled = true;
-    try {
-      await api("/api/project/assign", {
-        method: "POST",
-        body: JSON.stringify({
-          source: item.source,
-          conversation_id: item.id,
-          project_id: projectSelect.value,
-        }),
-      });
-      showToast(projectSelect.value ? "项目归属已确认并锁定" : "已移出项目");
-
-    } catch (error) {
-      showToast(error.message);
-      projectSelect.value = data.project_assignment?.project_id || "";
-    } finally {
-      projectSelect.disabled = false;
-    }
-  });
+  if (projectSelect) projectSelect.parentElement.style.display = "none";
   fragment.querySelector(".tags-input").value = (item.tags || []).join(", ");
   fragment.querySelector(".note-input").value = item.note || "";
   const relatedBlock = fragment.querySelector(".related-block");
@@ -1759,7 +1722,7 @@ async function saveDetail(root, item, quiet) {
     const cached = state.items.find((candidate) => candidate.source === item.source && candidate.id === item.id);
     if (cached) Object.assign(cached, payload);
     renderList();
-    Promise.resolve();
+    loadSummary();
     if (!quiet) showToast("备注和状态已保存");
   } catch (error) {
     saveState.textContent = "保存失败";
@@ -1959,16 +1922,6 @@ $("#saveSourcesButton").addEventListener("click", async (event) => {
   $(selector).addEventListener("change", invalidateProjectRulePreview);
 });
 
-$("#closeClassificationButton").addEventListener("click", () => $("#classificationDialog").close());
-$("#classificationMode").addEventListener("change", (event) => {
-  loadClassification(event.target.value).catch((error) => showToast(error.message));
-});
-$("#classificationSearch").addEventListener("input", renderClassificationList);
-$("#selectAllClassificationButton").addEventListener("click", () => {
-  const boxes = [...$("#classificationList").querySelectorAll('input[type="checkbox"]')];
-  const shouldSelect = boxes.some((box) => !box.checked);
-  boxes.forEach((box) => { box.checked = shouldSelect; });
-});
 $("#assignClassificationButton").addEventListener("click", async (event) => {
   const conversations = [...$("#classificationList").querySelectorAll('input[type="checkbox"]:checked')]
     .map((box) => ({ source: box.dataset.source, id: box.dataset.id }));
@@ -1979,46 +1932,6 @@ $("#assignClassificationButton").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   button.disabled = true;
   try {
-    await api("/api/project/assign-batch", {
-      method: "POST",
-      body: JSON.stringify({
-        project_id: $("#classificationTargetProject").value,
-        conversations,
-      }),
-    });
-
-    await loadClassification($("#classificationMode").value);
-    showToast(`已确认 ${conversations.length} 个对话的项目归属`);
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-});
-$("#mergeProjectButton").addEventListener("click", async (event) => {
-  const target = $("#mergeTargetProject").value;
-  if (!state.selectedProjectId || !target) {
-    showToast("请选择合并目标项目");
-    return;
-  }
-  const sourceName = state.projects.find((project) => project.id === state.selectedProjectId)?.name || "当前项目";
-  const targetName = state.projects.find((project) => project.id === target)?.name || "目标项目";
-  if (!window.confirm(`确认把「${sourceName}」合并到「${targetName}」？旧项目会保留为别名。`)) return;
-  const button = event.currentTarget;
-  button.disabled = true;
-  try {
-    await api("/api/project/merge", {
-      method: "POST",
-      body: JSON.stringify({
-        source_project_id: state.selectedProjectId,
-        target_project_id: target,
-      }),
-    });
-    state.selectedProjectId = target;
-
-    $("#classificationDialog").close();
-
-    showToast("项目已合并，旧项目别名已保留");
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -2055,28 +1968,6 @@ $("#downloadContextJsonButton").addEventListener("click", () => {
     state.contextPack.json,
     "application/json;charset=utf-8",
   );
-});
-
-$("#addProjectRootButton").addEventListener("click", async (event) => {
-  const path = $("#projectRootPathInput").value.trim();
-  if (!path) {
-    showToast("请填写具体的项目目录");
-    return;
-  }
-  const button = event.currentTarget;
-  button.disabled = true;
-  try {
-    const data = await api("/api/project/root/add", {
-      method: "POST",
-      body: JSON.stringify({
-        project_id: state.selectedProjectId,
-        path,
-        enabled: true,
-      }),
-    });
-  } finally {
-    button.disabled = false;
-  }
 });
 
 $("#findDailyBrief").addEventListener("click", (event) => {
@@ -2632,7 +2523,7 @@ async function boot() {
     readUrlState();
     setView(state.view, { sync: false });
     // Keep first paint fast: summary + conversations first; daily is lazy unless needed.
-    await Promise.resolve();
+    loadSummary();
     syncControls();
     await loadConversations();
     if (state.view === "daily") {
