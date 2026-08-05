@@ -74,6 +74,12 @@ function syncSourceControls(sources = {}) {
   document.querySelectorAll("#agentSwitcher .source-row[data-source]").forEach((row) => {
     const source = row.dataset.source;
     if (source === "all") return;
+    // 后端没有的源：隐藏按钮（动态跟随后端实际启用的源）
+    if (!(source in sources)) {
+      row.style.display = "none";
+      return;
+    }
+    row.style.display = "";
     let checkbox = row.querySelector("[data-source-enabled]");
     if (!checkbox) {
       checkbox = document.createElement("input");
@@ -88,7 +94,10 @@ function syncSourceControls(sources = {}) {
     row.classList.toggle("source-disabled", !enabled);
   });
   document.querySelectorAll("#searchAgentFilter option").forEach((option) => {
-    option.disabled = option.value !== "all" && !state.enabledSources.has(option.value);
+    if (option.value === "all") return;
+    // 后端没有的源：隐藏筛选项
+    if (!(option.value in sources)) { option.style.display = "none"; option.disabled = true; }
+    else { option.style.display = ""; option.disabled = !state.enabledSources.has(option.value); }
   });
   if (state.source !== "all" && !state.enabledSources.has(state.source)) {
     state.source = "all";
