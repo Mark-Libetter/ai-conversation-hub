@@ -2367,7 +2367,6 @@ function updateSelectionBar() {
   const count = state.checked.size;
   bar.hidden = count === 0;
   $("#selectionCount").textContent = `已选 ${count} 个对话`;
-  $("#generateSummaryButton").disabled = count === 0 || count > 20;
 }
 
 // ---- 对话总结 / 内容分析 ----
