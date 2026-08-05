@@ -1,3 +1,25 @@
+// 全局错误捕获：任何未捕获的错误显示在页面顶部
+window.addEventListener("error", (e) => {
+  const d = document.getElementById("globalErr") || (() => {
+    const el = document.createElement("div");
+    el.id = "globalErr";
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#a45045;color:#fff;padding:8px 16px;font-size:12px;font-family:sans-serif;white-space:pre-wrap";
+    document.body ? document.body.prepend(el) : document.documentElement.prepend(el);
+    return el;
+  })();
+  d.textContent += (d.textContent ? "\n" : "") + (e.message || "未知错误") + (e.filename ? " @ " + e.filename.split("/").pop() + ":" + e.lineno : "");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const d = document.getElementById("globalErr") || (() => {
+    const el = document.createElement("div");
+    el.id = "globalErr";
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#a45045;color:#fff;padding:8px 16px;font-size:12px;font-family:sans-serif;white-space:pre-wrap";
+    document.body ? document.body.prepend(el) : document.documentElement.prepend(el);
+    return el;
+  })();
+  d.textContent += (d.textContent ? "\n" : "") + "Promise: " + (e.reason?.message || e.reason || "未知");
+});
+
 const SAVED_VIEWS_KEY = "conversation-hub-v6-saved-views";
 const DETAIL_WIDTH_KEY = "conversation-hub-detail-width";
 const SOURCE_DETAILS_KEY = "conversation-hub-source-details-open";
@@ -1911,41 +1933,6 @@ $("#saveSourcesButton").addEventListener("click", async (event) => {
   }
 });
 
-[
-  "#projectRuleIncludes",
-  "#projectRuleExcludes",
-  "#projectRuleWorkspaces",
-  "#projectRulePaths",
-  "#projectRuleMinScore",
-  "#projectRuleEnabled",
-].forEach((selector) => {
-  $(selector).addEventListener("input", invalidateProjectRulePreview);
-  $(selector).addEventListener("change", invalidateProjectRulePreview);
-});
-
-$("#assignClassificationButton").addEventListener("click", async (event) => {
-  const conversations = [...$("#classificationList").querySelectorAll('input[type="checkbox"]:checked')]
-    .map((box) => ({ source: box.dataset.source, id: box.dataset.id }));
-  if (!conversations.length) {
-    showToast("请先选择要归类的对话");
-    return;
-  }
-  const button = event.currentTarget;
-  button.disabled = true;
-  try {
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-  }
-});
-
-$("#exportScope").addEventListener("change", (event) => {
-  $("#exportProject").closest("label").hidden = event.target.value !== "project";
-  $("#exportDate").closest("label").hidden = event.target.value !== "day";
-  state.exportResult = null;
-  $("#downloadExportButton").disabled = true;
-});
 $("#previewExportButton").addEventListener("click", () => {
   previewExport().catch((error) => {
     $("#exportState").textContent = error.message;
@@ -1956,19 +1943,6 @@ $("#downloadExportButton").addEventListener("click", () => {
   if (!state.exportResult) return;
   downloadText(state.exportResult.filename, state.exportResult.content, state.exportResult.mime);
   showToast("导出文件已下载");
-});
-
-$("#downloadContextPackButton").addEventListener("click", () => {
-  if (!state.contextPack) return;
-  downloadText(state.contextPack.filename, $("#contextPackPreview").value, "text/markdown;charset=utf-8");
-});
-$("#downloadContextJsonButton").addEventListener("click", () => {
-  if (!state.contextPack) return;
-  downloadText(
-    state.contextPack.filename.replace(/\.md$/i, ".json"),
-    state.contextPack.json,
-    "application/json;charset=utf-8",
-  );
 });
 
 $("#findDailyBrief").addEventListener("click", (event) => {
@@ -2504,13 +2478,25 @@ $("#resetThemeButton").addEventListener("click", () => {
 });
 
 async function boot() {
+  const _log = (msg) => {
+    const el = document.getElementById("bootDebug") || (() => {
+      const d = document.createElement("div");
+      d.id = "bootDebug";
+      d.style.cssText = "position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:9999;background:#173f3b;color:#fff;padding:6px 16px;border-radius:0 0 8px 8px;font-size:12px;font-family:sans-serif";
+      document.body.prepend(d);
+      return d;
+    })();
+    el.textContent = msg;
+  };
   try {
+    _log("启动中…");
     applyTheme(currentTheme(), { persist: false });
     initSidebarCollapse();
     updateSmartToggleButton();
     setDetailOpen(false);
     initDetailResizer();
     initSourceDetails();
+    _log("初始化完成…");
     $("#todayDate").textContent = new Intl.DateTimeFormat("zh-CN", {
       timeZone: "Asia/Shanghai",
       month: "long",
@@ -2519,13 +2505,16 @@ async function boot() {
     }).format(new Date());
     renderSavedViews();
     state.token = (await api("/api/token")).token;
+    _log("获取令牌…");
     await loadSetupStatus({ openIfRequired: true });
+    _log("检查数据源…");
     readUrlState();
     setView(state.view, { sync: false });
-    // Keep first paint fast: summary + conversations first; daily is lazy unless needed.
+    _log("加载对话…");
     loadSummary();
     syncControls();
     await loadConversations();
+    _log("完成");
     if (state.view === "daily") {
       await loadDaily();
     } else {
