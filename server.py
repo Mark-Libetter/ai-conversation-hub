@@ -53,9 +53,9 @@ APP_DIR = RESOURCE_DIR
 CORE_SOURCES = ("hermes", "codex", "workbuddy")
 SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
-DAILY_PROMPT_VERSION = 10
+DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.20.2"
+APP_VERSION = "0.20.3"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -1277,6 +1277,7 @@ def compact_focus_text(value: Any, limit: int = 28) -> str:
         action_terms = (
             "优化", "完善", "修复", "处理", "排查", "调整", "改为", "改成",
             "增加", "新增", "整理", "分析", "验证", "迁移", "折叠", "摘要",
+            "总结", "汇总", "搭建", "制作", "接入",
         )
         clauses.sort(
             key=lambda part: (
@@ -1290,7 +1291,8 @@ def compact_focus_text(value: Any, limit: int = 28) -> str:
     text = re.sub(r"(?:可以|能不能|是否|应该|需要)(?:帮忙)?", "", text)
     text = re.sub(r"(?:怎么样|怎么办|怎么做|怎么处理|是什么问题)$", "", text)
     text = re.sub(r"\s+", "", text).strip(" ：:；;，,。.!！？?\"'“”「」")
-    return text[:limit].rstrip(" ：:；;，,。.!！？?\"'“”「」") or "梳理今天的重点工作"
+    trimmed = text[:limit].rstrip(" ：:；;，,。.!！？?\"'“”「」的了地得和与及")
+    return trimmed if len(trimmed) >= 4 else "梳理今天的重点工作"
 
 
 def safe_filename(value: Any, fallback: str = "conversation-export") -> str:
@@ -3726,6 +3728,41 @@ class ConversationIndex:
             result["next_action"] = clean_text(next_action, 300)
         return result
 
+    @staticmethod
+    def _dominant_project_focus(entries: list[dict[str, Any]]) -> str:
+        """若当天对话明显集中于某个已归类项目，生成"围绕「项目名」推进"式焦点。"""
+        keys = [
+            (str(entry.get("source") or ""), str(entry.get("id") or ""))
+            for entry in entries
+            if entry.get("source") and entry.get("id")
+        ]
+        if len(keys) < 2:
+            return ""
+        flat: list[str] = []
+        for source, conversation_id in keys:
+            flat.extend((source, conversation_id))
+        pairs = ",".join("(?,?)" for _ in keys)
+        with notes_db() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT p.name AS name, COUNT(*) AS c
+                FROM project_assignments pa
+                JOIN projects p ON p.id = pa.project_id
+                WHERE (pa.source, pa.conversation_id) IN ({pairs})
+                GROUP BY pa.project_id
+                ORDER BY c DESC
+                """,
+                flat,
+            ).fetchall()
+        if not rows:
+            return ""
+        top_name = str(rows[0]["name"] or "")
+        top_count = int(rows[0]["c"] or 0)
+        total = len(keys)
+        if not top_name or top_count < 2 or top_count * 2 < total:
+            return ""
+        return f"围绕「{top_name}」推进"
+
     def _rules_daily_summary(self, day: str, entries: list[dict[str, Any]]) -> dict[str, Any]:
         if not entries:
             return {
@@ -3813,7 +3850,7 @@ class ConversationIndex:
                 or "thread://" in candidate
             ):
                 candidate = request or title
-            candidate = re.sub(r"\[[^\]]+\]\([^)]+\)", " ", candidate)
+            candidate = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", candidate)
             candidate = re.sub(r"^[\s@#\[\]：:]+|[\s@#\[\]：:]+$", "", candidate)
             candidate = re.sub(r"\s+", " ", candidate)
             combined = f"{title} {request}"
@@ -3829,7 +3866,26 @@ class ConversationIndex:
                 candidate = "优化每日摘要的信息层级与阅读体验"
             elif "项目" in candidate and any(term in candidate for term in ("拖动", "大小", "宽度")):
                 candidate = "完善项目页面的可调整布局"
-            return compact_focus_text(candidate)
+            if not candidate or len(candidate.strip()) < 4:
+                candidate = title
+            request_focus = compact_focus_text(candidate)
+            title_focus = compact_focus_text(title)
+            if request_focus != title_focus:
+                action_terms = (
+                    "优化", "完善", "修复", "处理", "排查", "调整", "改为", "改成",
+                    "增加", "新增", "整理", "分析", "验证", "迁移", "折叠", "摘要",
+                    "总结", "汇总", "搭建", "制作", "接入",
+                )
+                request_has = any(term in request_focus for term in action_terms)
+                title_has = any(term in title_focus for term in action_terms)
+                if title_has and not request_has:
+                    return title_focus
+                if request_has == title_has:
+                    if len(title_focus) < len(request_focus):
+                        return title_focus
+                    if len(title_focus) == len(request_focus):
+                        return title_focus
+            return request_focus
 
         activities: list[dict[str, str]] = []
         achievements: list[dict[str, str]] = []
@@ -3839,6 +3895,7 @@ class ConversationIndex:
         blocked: list[dict[str, str]] = []
         next_actions: list[dict[str, str]] = []
         focus_scores: list[tuple[float, dict[str, Any], str]] = []
+        meta_continuations: set[tuple[str, str]] = set()
 
         for entry in entries:
             request = claim_text(entry["latest_user"], 160)
@@ -3932,11 +3989,24 @@ class ConversationIndex:
                 score += 50_000
             if "对话中心" in (title + request + response) or "AIConversationHub" in (title + request):
                 score += 80_000
+            # 引用对话继续/系统注入类元消息不参与焦点竞选，避免焦点变成空洞链接碎片
+            if (
+                (request or "").lstrip().startswith(("[", "@", "<"))
+                or "thread://" in (title + (request or ""))
+            ):
+                meta_continuations.add((entry["source"], entry["id"]))
             focus_scores.append((score, entry, topic))
 
         focus_scores.sort(key=lambda item: item[0], reverse=True)
-        main_entry = focus_scores[0][1]
-        main_topic = focus_scores[0][2]
+        candidates = [
+            item for item in focus_scores
+            if (item[1]["source"], item[1]["id"]) not in meta_continuations
+        ] or focus_scores
+        main_entry = candidates[0][1]
+        main_topic = candidates[0][2]
+        dominant_focus = self._dominant_project_focus(entries)
+        if dominant_focus:
+            main_topic = dominant_focus
         main_focus = [self._daily_ref(main_entry, main_topic)]
 
         def dedupe(items: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
@@ -4024,7 +4094,7 @@ class ConversationIndex:
             ]
 
         top_topics = []
-        for _, _, topic in focus_scores[:3]:
+        for _, _, topic in candidates[:3]:
             if topic and topic not in top_topics:
                 top_topics.append(topic)
         done_bits = [
