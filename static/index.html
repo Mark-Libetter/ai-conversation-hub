@@ -826,8 +826,13 @@
             </ol>
             <p class="muted small">提示：FreeLLMAPI 内置的免密钥源（OVH/kilo）有限速，连发会卡几分钟。重度使用建议走方案 A。</p>
 
-            <p><strong class="guide-tag tag-c">方案 C · 想用 DeepSeek 模型</strong></p>
-            <p class="muted small">Groq 不提供 DeepSeek。若你一定要用，去 <a href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> 注册（免费、不要信用卡）→ 生成 API key → 接口地址填 <code>https://integrate.api.nvidia.com/v1</code> → 选 <code>deepseek-ai/deepseek-v4-flash</code>。但说实话，方案 A 的 llama-3.3-70b 质量不输 DeepSeek。</p>
+            <p><strong class="guide-tag tag-c">方案 C · 想用 DeepSeek 模型（已预置，给 key 即用）</strong></p>
+            <ol class="guide-steps">
+              <li>打开 <a href="https://opencode.ai/zen" target="_blank" rel="noopener">opencode.ai/zen</a>，用 GitHub 账号登录，复制你的 Zen API Key</li>
+              <li>回到这里：服务预设选「OpenCode Zen（免费 DeepSeek）」→ 接口地址自动填好</li>
+              <li>密钥粘贴 Zen Key → 点「读取模型列表」→ 选 <code>deepseek-v4-flash-free</code>（免费）</li>
+            </ol>
+            <p class="muted small">全程免费、无需信用卡。若想要更强的 <code>deepseek-v4-pro</code>，同一接口直接选即可。</p>
 
             <p class="muted small">完整的接入 SOP 和排错见收件箱：<code>FreeLLMAPI接入SOP_2026-08-05.md</code></p>
           </div>
@@ -856,6 +861,7 @@
             <label><span>服务预设</span><select id="summaryProviderPreset">
               <option value="freellmapi">FreeLLMAPI（本地聚合免费额度）</option>
               <option value="agentrouter">Agent Router（免费额度）</option>
+              <option value="opencode">OpenCode Zen（免费 DeepSeek）</option>
               <option value="paratera">Paratera MaaS</option>
               <option value="ollama">Ollama 本机</option>
               <option value="lmstudio">LM Studio 本机</option>

@@ -1142,7 +1142,9 @@ def detect_model_provider(api_url: str) -> str:
         return "paratera"
     if hostname.endswith("agentrouter.org"):
         return "agentrouter"
-    if hostname in {"127.0.0.1", "localhost", "::1"} and port == 3001:
+    if hostname.endswith("opencode.ai"):
+        return "opencode"
+    if hostname in {"127.0.0.1", "localhost", "::1"} and port in {3001, 31415}:
         return "freellmapi"
     if hostname in {"127.0.0.1", "localhost", "::1"} and port == 11434:
         return "ollama"
