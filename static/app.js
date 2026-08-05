@@ -3993,7 +3993,7 @@ $("#modelSettingsDialog").addEventListener("click", (event) => {
 });
 
 const PRESET_URLS = {
-  freellmapi: "http://127.0.0.1:3001/v1",
+  freellmapi: "http://127.0.0.1:31415/v1",
   agentrouter: "https://agentrouter.org/v1",
   paratera: "https://llmapi.paratera.com/v1",
   ollama: "http://127.0.0.1:11434/v1",
