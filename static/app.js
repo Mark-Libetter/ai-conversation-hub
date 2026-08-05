@@ -1097,13 +1097,17 @@ function renderDaily(data) {
 }
 
 async function loadDaily() {
+  const _t = (m) => { const el = document.getElementById("bootDebug"); if (el) el.textContent = `[daily] ${m}`; };
+  _t("start");
   $("#reviewDate").value = state.dailyDate;
   $("#reviewDate").max = localDateIso();
   $("#nextDayButton").disabled = state.dailyDate >= localDateIso();
   renderDailyDateStrip();
-  $("#dailyBody").innerHTML = `<div class="daily-loading">正在整理 ${escapeHtml(dayLabel(state.dailyDate))} 的对话…</div>`;
+  _t("before api");
   const data = await api(`/api/daily?date=${encodeURIComponent(state.dailyDate)}`);
+  _t("api done");
   renderDaily(data);
+  _t("render done");
   syncUrl();
 }
 
