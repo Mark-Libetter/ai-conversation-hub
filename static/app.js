@@ -1126,30 +1126,44 @@ function renderDaily(data) {
   `;
   const brief = $("#findDailyBrief");
   if (brief) {
-    const unfinished = (summary.unfinished || summary.ongoing || []).length;
-    const focus = summary.main_focus?.[0]?.text || "今天没有识别到唯一主线";
-    const achievement = summary.achievements?.[0];
-    const unfinishedItem = (summary.unfinished || summary.ongoing || [])[0];
-    const achievementParts = achievement ? summaryItemParts(achievement, "achievement") : null;
-    const unfinishedParts = unfinishedItem ? summaryItemParts(unfinishedItem, "unfinished") : null;
+    const focusEntry = summary.main_focus?.[0] || {};
+    const focus = focusEntry.text || "今天没有识别到唯一主线";
+    const focusStatus = focusEntry.status || "ongoing";
+    const focusKey = (focusEntry.source || "") + (focusEntry.conversation_id || focusEntry.id || "");
+    const statusLabel = { done: "已完成", ongoing: "进行中", blocked: "受阻" }[focusStatus] || "进行中";
+    const achievements = summary.achievements || [];
+    const unfinishedList = summary.unfinished || summary.ongoing || [];
+    // 要点列表：完成✓ + 待继续○，跳过和主线同源的条目避免重复
+    const pointParts = (items, kind, limit) => {
+      const out = [];
+      for (const it of items) {
+        const key = (it.source || "") + (it.conversation_id || it.id || "");
+        if (key && key === focusKey) continue; // 去重主线
+        const p = summaryItemParts(it, kind);
+        if (p?.title) out.push(p.title);
+        if (out.length >= limit) break;
+      }
+      return out;
+    };
+    const donePoints = pointParts(achievements, "achievement", 3);
+    const openPoints = pointParts(unfinishedList, "unfinished", 2);
+    const totalItems = achievements.length + unfinishedList.length;
+    const pointsHtml = (mark, cls, items) =>
+      items.map((t) => `<li class="${cls}"><span class="brief-mark">${mark}</span><span>${escapeHtml(t)}</span></li>`).join("");
     brief.innerHTML = `
       <div class="brief-label">
         <span>${escapeHtml(dayLabel(data.day))}</span>
-        <strong>工作焦点</strong>
+        <strong>今日要点</strong>
       </div>
       <div class="brief-copy">
-        <h2>${escapeHtml(focus)}</h2>
-        <div class="brief-points">
-          <p class="done"><b>完成</b><span>${escapeHtml(
-            achievementParts?.title || "暂无可核验成果"
-          )}</span></p>
-          <p class="open"><b>待继续</b><span>${escapeHtml(
-            unfinishedParts?.title || "暂无明确遗留事项"
-          )}</span></p>
-        </div>
+        <h2>${escapeHtml(focus)} <span class="status-badge status-${focusStatus}">${statusLabel}</span></h2>
+        ${(donePoints.length || openPoints.length) ? `<ul class="brief-points-list">
+          ${pointsHtml("✓", "done", donePoints)}
+          ${pointsHtml("○", "open", openPoints)}
+        </ul>` : `<p class="muted brief-empty">暂无更多要点</p>`}
       </div>
       <div class="brief-actions">
-        <span><b>${summary.achievements.length}</b> 完成 · <b>${unfinished}</b> 待继续</span>
+        <span><b>${totalItems}</b> 件事 · <b>${achievements.length}</b> 完成 · <b>${unfinishedList.length}</b> 待继续</span>
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;

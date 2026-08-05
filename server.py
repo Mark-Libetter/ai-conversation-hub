@@ -3997,7 +3997,8 @@ class ConversationIndex:
                 or "thread://" in (title + (request or ""))
             ):
                 meta_continuations.add((entry["source"], entry["id"]))
-            focus_scores.append((score, entry, topic))
+            focus_status = "done" if is_done else ("blocked" if is_blocked else "ongoing")
+            focus_scores.append((score, entry, topic, focus_status))
 
         focus_scores.sort(key=lambda item: item[0], reverse=True)
         candidates = [
@@ -4006,10 +4007,12 @@ class ConversationIndex:
         ] or focus_scores
         main_entry = candidates[0][1]
         main_topic = candidates[0][2]
+        main_status = candidates[0][3] if len(candidates[0]) > 3 else "ongoing"
         dominant_focus = self._dominant_project_focus(entries)
         if dominant_focus:
             main_topic = dominant_focus
         main_focus = [self._daily_ref(main_entry, main_topic)]
+        main_focus[0]["status"] = main_status
 
         def dedupe(items: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
             seen: set[str] = set()
@@ -4096,7 +4099,8 @@ class ConversationIndex:
             ]
 
         top_topics = []
-        for _, _, topic in candidates[:3]:
+        for item in candidates[:3]:
+            topic = item[2] if len(item) > 2 else ""
             if topic and topic not in top_topics:
                 top_topics.append(topic)
         done_bits = [
