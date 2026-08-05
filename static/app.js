@@ -169,10 +169,6 @@ const state = {
     codex: defaultFilters(),
     workbuddy: defaultFilters(),
     claude: defaultFilters(),
-    codepilot: defaultFilters(),
-    cursor: defaultFilters(),
-    marvis: defaultFilters(),
-    qclaw: defaultFilters(),
     qoderwork: defaultFilters(),
   },
 };
