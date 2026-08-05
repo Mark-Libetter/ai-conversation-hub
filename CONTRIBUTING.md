@@ -28,7 +28,7 @@
 
 ## 编写内置适配器（需要改代码）
 
-如果你想为某个 agent 编写内置适配器（像 Codex/Hermes/WorkBuddy/QoderWork 那样自动发现），需要：
+如果你想为某个 agent 编写内置适配器（像 Codex/Hermes/WorkBuddy/QoderWork/ZCode 那样自动发现），需要：
 
 ### 1. 在 `source_adapters.py` 添加加载函数
 
@@ -48,11 +48,13 @@ def _load_your_agent(path: Path) -> tuple[list[dict], dict[str, list[dict]]]:
 ### 2. 注册到 EXTRA_SOURCES 和 LOADERS
 
 ```python
-EXTRA_SOURCES = ("qoderwork", "your_agent")  # 加上你的
+EXTRA_SOURCES = ("claude", "qoderwork", "zcode", "your_agent")  # 加上你的
 
 # 文件底部
 LOADERS = {
+    "claude": _load_claude,
     "qoderwork": _load_qoderwork,
+    "zcode": _load_zcode,
     "your_agent": _load_your_agent,  # 加上你的
 }
 ```

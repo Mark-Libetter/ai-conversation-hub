@@ -1,18 +1,22 @@
 # Privacy
 
-AI Conversation Hub is local-first. Its server binds to `127.0.0.1`; original
-conversation stores are opened read-only. The Hub indexes only top-level user
-and assistant text and excludes system/developer prompts, reasoning, tool
-input/output, background automation and subagent-only records.
+AI Conversation Hub Lite is local-first. Its server binds only to `127.0.0.1`;
+original conversation stores are opened read-only and are never renamed,
+archived, deleted, or modified.
 
-Hub-owned notes, tags, favorites, projects, summaries and knowledge decisions
-are stored separately. Management backups deliberately exclude original
-conversations, API keys, search indexes and machine-specific source settings.
+The Hub indexes only top-level user and assistant text. System/developer
+prompts, reasoning, tool input/output, background notifications, subagent-only
+records (for example ZCode subagent sessions and Codex subagent threads), and
+common secret patterns (Bearer tokens, API keys, passwords) are excluded.
 
-No model is required for search or organization. A configured model endpoint is
-contacted only after the user explicitly requests a model-backed summary or
-connection test. Saved API keys are protected with Windows DPAPI or the macOS
-Keychain for the current user and are never returned to the browser.
+Hub-owned notes, tags, favorites, and daily-review metadata are stored in a
+separate `hub_notes.sqlite`, apart from all source-product databases.
+Management backups export only Hub-owned data and never include original
+conversations or machine-specific source settings.
 
-The update checker contacts only the HTTPS manifest URL configured by the user.
-Downloaded packages are SHA-256 verified and are never executed automatically.
+Search and the rule-based daily review are fully deterministic and offline: no
+model endpoint is ever contacted, and the Lite build has no model features.
+
+The optional update checker stays idle until you paste a manifest URL yourself.
+It then contacts only that HTTPS URL, verifies downloaded packages by SHA-256,
+and never executes anything automatically.
