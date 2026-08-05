@@ -1344,14 +1344,36 @@ async function loadAssets() {
 }
 
 function exportPayload() {
-  return {
-    scope: "day",
-    day: $("#exportDate").value,
+  const scope = $("#exportScope")?.value || "day";
+  const payload = {
     format: $("#exportFormat").value,
     include_messages: $("#exportMessages").checked,
     include_notes: $("#exportNotes").checked,
   };
+  if (scope === "selected") {
+    const selected = [...state.checked.values()];
+    if (!selected.length) throw new Error("请先在「找对话」里勾选要导出的对话（点击对话左侧方框）");
+    payload.scope = "selected";
+    payload.conversations = selected.map((it) => ({ source: it.source, id: it.id }));
+  } else {
+    payload.scope = "day";
+    payload.day = $("#exportDate").value;
+  }
+  return payload;
 }
+
+// 导出范围切换：选"已选对话"时隐藏日期，选"按日期"时显示
+$("#exportScope")?.addEventListener("change", (e) => {
+  const dateLabel = $("#exportDateLabel");
+  if (dateLabel) dateLabel.style.display = e.target.value === "selected" ? "none" : "";
+  const count = state.checked.size;
+  const hint = $("#exportState");
+  if (e.target.value === "selected") {
+    hint.textContent = count ? `已勾选 ${count} 个对话` : "尚未勾选任何对话，请先在「找对话」里勾选";
+  } else {
+    hint.textContent = "";
+  }
+});
 
 async function previewExport() {
   const button = $("#previewExportButton");

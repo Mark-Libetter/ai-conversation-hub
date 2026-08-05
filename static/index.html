@@ -226,7 +226,11 @@
                   <div><span class="settings-index">01</span><h3>导出中心</h3><p>按日期导出安全的 Markdown / JSONL。</p></div>
                 </div>
                 <div class="export-fields">
-                  <label><span>日期</span><input id="exportDate" type="date"></label>
+                  <label><span>导出范围</span><select id="exportScope">
+                    <option value="day">按日期</option>
+                    <option value="selected">已勾选的对话</option>
+                  </select></label>
+                  <label id="exportDateLabel"><span>日期</span><input id="exportDate" type="date"></label>
                   <label><span>格式</span><select id="exportFormat">
                     <option value="markdown">Markdown</option>
                     <option value="jsonl">结构化 JSONL</option>
