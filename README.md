@@ -1,250 +1,99 @@
-# AI Conversation Hub v18
+# AI Conversation Hub · Lite
 
-A local-first Windows and macOS dashboard for finding, reviewing, organizing, and safely
-exporting conversations from Hermes, Codex, WorkBuddy, Claude Code, CodePilot,
-Cursor, Marvis, QClaw, and QoderWork.
+> 把多个 AI 编程助手的对话只读汇聚成一条可搜索的时间线，帮你找回记忆、复盘工作。
+> 本地运行、零第三方依赖、对原始数据只读。
 
-## Product shape
+## 这是什么
 
-The primary navigation deliberately stays small:
+如果你同时用 Codex、Hermes、WorkBuddy、QoderWork 等 AI 编程助手，对话散落在各家，找一个"之前在哪聊过这个"很痛苦。这个工具把它们汇聚到一个本地界面，让你：
 
-- **Find** — cross-source full-text search, excerpts, filters, saved views,
-  resizable conversation detail, favorites, tags, notes, and Markdown export.
-- **Daily review** — a rule-based review that works offline, plus an optional
-  user-triggered model summary with achievements, current work, blockers, and
-  next actions linked back to source conversations.
-- **Projects** — multi-project classification, beginner-friendly planning,
-  current state, version timeline, project summaries, and optional recent-file
-  metadata.
+- **跨源搜索**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号）
+- **每日回顾**：自动生成当天的工作日报（规则版，离线可用，不调模型）
+- **对话详情**：看完整对话内容，加收藏、标签、备注，导出 Markdown
 
-Lower-frequency knowledge review, batch export, Context Packs, audit history,
-model settings, and source settings live under **Tools** or **Settings**.
+## 设计原则
 
-Search can be scoped to one Agent from inside the search box. Whitespace means
-`AND`; quoted phrases, `OR`, `NOT`, `-excluded`, and parentheses are supported.
-For example: `(日报 OR 周报) API NOT 股票`.
+| 原则 | 怎么做到 |
+|---|---|
+| **只读** | 对各 agent 的原始数据只读，绝不修改 |
+| **本地优先** | 全程本机运行，数据不经过云端 |
+| **零依赖** | 纯 Python 标准库，无需 pip install |
+| **离线可用** | 搜索和每日回顾全程本地，不需要模型 |
 
-Search and its persistent SQLite FTS index are fully local and deterministic. No model is required to
-discover paths, parse conversations, run Boolean queries, show snippets, or
-export Markdown.
+## 内置数据源
 
-Project classification is deterministic and explainable. Manually locked
-assignments win. Each canonical project can then define source-independent
-include keywords, exclude keywords, workspace aliases, path patterns, and a
-minimum confidence. The same rule scans every enabled Agent, so work performed
-by different tools can share one project timeline. A dry run shows
-new, moved, locked, conflicting, and per-Agent matches before a rule is saved.
-Repeated non-generic workspaces remain the final fallback.
+首版内置 4 个适配器：
 
-## v18 highlights
+| Agent | 数据位置 |
+|---|---|
+| **Hermes** | `~/.codex/` 同级 Hermes 数据库 |
+| **Codex** | `~/.codex/state_5.sqlite` + rollout JSONL |
+| **WorkBuddy** | `~/.workbuddy/` |
+| **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db` |
 
-- First macOS application and DMG build for both Apple Silicon and Intel.
-- macOS Application Support UserData isolation, Keychain-backed API secrets,
-  Finder reveal, and system-specific update assets.
-- Standard macOS discovery for Codex, Hermes, WorkBuddy, Claude Code, Cursor,
-  and the other supported local adapters, with manual-path fallback.
-- Windows and macOS CI plus packaged first-run smoke tests; the Windows portable
-  build remains regression-tested.
+**想接入其它 agent？** 见 [CONTRIBUTING.md](CONTRIBUTING.md)，支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码。
 
-## v17 highlights
+## 快速开始
 
-- A built-in project coach turns each canonical project into a concise objective,
-  stage, success criteria, milestones, acceptance checks, risks, open questions,
-  and one immediately executable next action. It works from a safe template
-  offline and can be explicitly refreshed with the configured model.
-- Model-assisted knowledge extraction reuses the existing OpenAI-compatible
-  endpoint and always creates review candidates first.
-- Approved, non-revoked knowledge can be manually exported into a user-selected
-  Obsidian vault. Hub-owned Markdown files use stable IDs and include traceable
-  source-conversation evidence.
-- Obsidian export is path-contained, never exports pending cards, skips
-  restricted cards, and never modifies original Agent conversation stores.
+### 环境要求
+- Python 3.10+（仅标准库）
+- Windows / macOS
 
-## Install on Windows
-
-The intended public distribution is a per-user Windows installer. It contains
-its own Python runtime, so the target computer does not need Python, Git, or a
-matching folder layout.
-
-On first launch, the setup dialog:
-
-1. checks common locations for all bundled source adapters;
-2. lets the user choose which detected Agents to enable;
-3. lets the user choose an extra directory to scan or paste exact paths;
-4. validates each database or JSONL layout using read-only access; and
-5. builds the first index after at least one enabled source passes validation.
-
-Program files install to:
-
-```text
-%LOCALAPPDATA%\Programs\AIConversationHub
-```
-
-Personal configuration and Hub-owned data remain in:
-
-```text
-%LOCALAPPDATA%\AIConversationHub\UserData
-```
-
-Upgrading or uninstalling the program does not silently remove UserData.
-
-## Install on macOS
-
-The macOS build is a normal `AI Conversation Hub.app` distributed in a DMG.
-Copy the app to `Applications`, open it, and complete the same first-run source
-selection used on Windows. Personal data is stored separately at:
-
-```text
-~/Library/Application Support/AIConversationHub/UserData
-```
-
-The first macOS release is ad-hoc signed. Until a Developer ID and notarization
-are configured, use Control-click → **Open** once if Gatekeeper warns about the
-downloaded app. The app is not sandboxed because it must read user-approved
-local Agent histories; all source stores are still opened read-only.
-
-Standard discovery covers `~/.codex/state_5.sqlite`,
-`~/.hermes/state.db`, `~/.workbuddy`, `~/.claude`, and supported Agent data
-under `~/Library/Application Support`. If a vendor uses a different build or
-channel path, paste the exact path in first-run setup or choose an extra search
-directory.
-
-## Run from source
-
-Requires Python 3.11+ on Windows or macOS:
-
-```powershell
-python -m pip install -r requirements.txt
-python desktop_app.py
-```
-
-For the existing development workflow, `server.py --port 8765` is still
-supported. Set `CONVERSATION_HUB_DATA_DIR` to test against an isolated data
-directory.
-
-## Build the Windows installer
-
-Install Python 3.11 and Inno Setup 6 on the build computer, then run:
-
-```powershell
-.\scripts\build.ps1
-```
-
-The script creates an isolated build environment, builds an onedir executable
-with PyInstaller, performs a packaged first-run smoke test, and compiles the
-per-user installer. Use `-SkipInstaller` to build only the portable directory.
-
-## Build the macOS app and DMG
-
-Run this on the target architecture’s Mac:
-
+### 运行
 ```bash
-bash scripts/build_macos.sh
+python server.py
+```
+浏览器打开 `http://127.0.0.1:8765`。
+
+首次运行会自动发现本机的 Codex / Hermes / WorkBuddy / QoderWork 数据。如果自动发现失败，在「设置」里手动配置路径。
+
+### 桌面启动（Windows）
+双击 `launcher.py` 或运行 `python launcher.py`，会自动启动服务并打开浏览器。
+
+## 功能一览
+
+### 找对话
+- 跨 4 个源的布尔全文检索
+- 智能搜索：自然语言自动转布尔检索式
+- 筛选：时间范围、状态、工作区、只看收藏
+- 对话详情：可追溯概览、收藏、标签、备注、导出 Markdown
+
+### 每日回顾
+- **今日要点**：平等列出当天各事项，带数据来源标签，点击展开看最近对话原文，一键跳转到该对话
+- **完整日报**：概览、已完成、关键决定、待继续、受阻、下一步
+- 日期切换：查看任意一天，支持日历选择
+- 规则版离线可用，不依赖模型
+
+## 隐私与安全
+
+- 原始对话数据**只读**，工具绝不写回 agent 的数据库
+- 你的收藏/备注/标签存在独立的 `hub_notes.sqlite`，与原始数据分开
+- 全程本地，不发送任何数据到云端
+- 详见 [PRIVACY.md](PRIVACY.md)
+
+## 项目结构
+
+```
+server.py           # 后端：HTTP 服务 + 索引 + 搜索 + 每日回顾
+source_adapters.py  # 数据源适配器（内置4个 + 自定义源框架）
+static/
+  app.js            # 前端逻辑
+  index.html        # 页面结构
+  app.css           # 样式
+launcher.py         # Windows 桌面启动器
+desktop_app.py      # 桌面应用壳
 ```
 
-This builds and smoke-tests the `.app`, applies an ad-hoc signature by default,
-and creates an architecture-specific DMG in `release/`. Set
-`MACOS_SIGNING_IDENTITY` to a Developer ID Application identity when public
-signing is available.
+## 许可证
 
-The `Build macOS` GitHub Actions workflow produces separate Apple Silicon
-(`arm64`) and Intel (`x86_64`) DMGs. PyInstaller builds must run on macOS; the
-Windows development computer cannot cross-compile a valid macOS app bundle.
+本项目采用 **CC BY-NC 4.0**（署名-非商业性使用 4.0）许可证。
 
-## Privacy and safety
+- ✅ 你可以自由使用、修改、分享、学习
+- ✅ 必须保留原作者署名
+- ❌ **不得用于商业用途**；如需商用，请联系作者另行授权
 
-- The web server binds only to `127.0.0.1`.
-- Original source databases are opened read-only and are never renamed,
-  archived, deleted, or modified.
-- Only top-level user/assistant text is indexed. System/developer prompts,
-  reasoning, tool calls/output, background automation, heartbeats, trajectories,
-  Codex subagents/guardian threads, WorkBuddy/QClaw/Claude side agents, and
-  common secret patterns are excluded.
-- User-visible tasks continued or delegated from another task remain indexed
-  even when Codex labels their lineage as `thread_source=subagent`; filtering
-  requires actual background-agent metadata rather than that label alone.
-- Notes, project assignments, knowledge decisions, summaries, and audit
-  metadata live in the separate `hub_notes.sqlite`.
-- Model calls happen only after an explicit user action.
-- API keys saved in the UI use Windows DPAPI or the macOS Keychain for the
-  current user and are never written to `sources.json` or returned to the browser.
-- Project-file scanning is opt-in, metadata-only, time/size bounded, and skips
-  secrets, links, junctions, caches, and sensitive directories.
+详见 [LICENSE](LICENSE)。
 
-See [DESIGN_AND_SAFETY.md](DESIGN_AND_SAFETY.md) and [SECURITY.md](SECURITY.md).
+## 致谢
 
-## v14 highlights
-
-- Skill asset library across Hermes, Codex, WorkBuddy, Claude Code, QClaw,
-  QoderWork, Codex system skills, and installed Codex plugins.
-- Skill detail pages with capabilities, provenance, safe file metadata,
-  fingerprints, cross-Agent copy comparison, and project relationships.
-- Hub-owned Skill favorites, lifecycle status, canonical grouping, tags, notes,
-  and manually locked project links; original Skill directories stay read-only.
-- Project-level Skill and Obsidian-vault drift auditing.
-
-## v13 highlights
-
-- Data-source quality center with schema fingerprints, message completeness,
-  excluded-thread counts, and adapter health for every enabled source.
-- Persistent Hub-owned full-text index plus conservative cross-Agent
-  continuation links inside canonical projects.
-- Secret-free management-data backup, conflict preview, and safe merge restore.
-- Explainable project-rule suggestions and a one-sentence daily outcome template.
-- Five persistent local themes, led by an original asset-safe Dream Skin inspired
-  glass theme, with no injection into Codex or third-party artwork.
-- HTTPS update manifests, SHA-256 verified downloads, signing preparation, and
-  second-computer acceptance documentation.
-
-## v12 highlights
-
-- Pluggable, source-independent adapters for Claude Code, CodePilot, Cursor,
-  Marvis, QClaw, and QoderWork in addition to the original three sources.
-- First-run opt-in selection and later enable/disable/path changes from Settings.
-- Cross-computer standard-path discovery plus a bounded user-selected-root
-  fallback; no dependency on Everything, a model, or a fixed drive letter.
-- Source-specific schema validation and filtering of system prompts, reasoning,
-  tool output, heartbeats, automation, trajectories, and subagents.
-- Local in-memory full-text matching for adapter messages, using the same
-  Boolean query language and Markdown export pipeline as existing sources.
-
-## v11 highlights
-
-- Cross-Agent canonical project rules shared by Codex, Hermes, and WorkBuddy.
-- Editable include/exclude keywords, workspace aliases, path patterns, and
-  confidence thresholds.
-- Read-only rule preview with per-Agent match counts and movement/conflict
-  warnings before applying changes.
-- Manual project assignments remain locked and always override automation.
-
-## v10 highlights
-
-- Auditable knowledge revisions, expiry/revocation, evidence verification, and
-  conflict handling.
-- Operation and artifact ledger that stores metadata and hashes, not exported
-  content.
-- Explicit project-root confirmation and bounded recent-file metadata.
-- Reduced information architecture with lazy-loaded advanced panels.
-- Portable resource/UserData separation, first-run source setup, dynamic local
-  port selection, health signature, and packaging scaffolding.
-
-## Configuration
-
-Do not commit a real `sources.json`. Start from `sources.example.json` or use
-the first-run UI. Environment overrides are available for managed setups:
-
-```text
-CONVERSATION_HUB_DATA_DIR=<Hub UserData directory>
-CONVERSATION_HUB_HERMES_DB=<path to state.db>
-CONVERSATION_HUB_CODEX_DB=<path to state_5.sqlite>
-WORKBUDDY_HOME=<directory containing workbuddy.db and projects>
-CONVERSATION_HUB_SUMMARY_API_URL=<OpenAI-compatible base URL>
-CONVERSATION_HUB_SUMMARY_MODEL=<model ID>
-CONVERSATION_HUB_SUMMARY_API_KEY=<optional secret>
-```
-
-## Contributing and license
-
-Contribution guidance is in [CONTRIBUTING.md](CONTRIBUTING.md). A public license
-has intentionally not been selected yet; choose one before the first public
-release so downstream users know what they may do with the code.
+本项目源自个人 AI 编程实践，感谢所有被接入的 AI 编程助手的设计者。
