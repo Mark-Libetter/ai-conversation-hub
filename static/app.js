@@ -1106,7 +1106,7 @@ async function loadDaily() {
   _t("before api");
   const data = await api(`/api/daily?date=${encodeURIComponent(state.dailyDate)}`);
   _t("api done");
-  renderDaily(data);
+  $("#dailyBody").innerHTML = renderDaily(data);
   _t("render done");
   syncUrl();
 }
