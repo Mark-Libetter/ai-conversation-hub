@@ -2501,7 +2501,6 @@ async function boot() {
     updateSmartToggleButton();
     setDetailOpen(false);
     initDetailResizer();
-    initProjectColumnResizers();
     initSourceDetails();
     $("#todayDate").textContent = new Intl.DateTimeFormat("zh-CN", {
       timeZone: "Asia/Shanghai",
