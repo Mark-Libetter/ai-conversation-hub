@@ -3049,12 +3049,19 @@ class ConversationIndex:
                     title = claim_text(full_context, 120) or "Codex 对话"
                 else:
                     title = raw_title or clean_text(preview, 80) or row["id"]
-                # 清理 codex 超长标题：剥离引用链接，压缩到可读长度
-                # 形如 "[@继续完善…](thread://xxx) ；后续指令" → 去链接 + 截断
-                title = re.sub(r"\[[^\]]*\]\(thread://[^)]+\)", "", title)
-                title = re.sub(r"\s*[；;]\s*", "：", title).strip(" ：:，,")
+                # 仅做格式清理（不改写内容）：
+                # 1) markdown 链接保留可见文字：[@文字](thread://...) → 文字
+                title = re.sub(r"\[([^\]]*)\]\((?:thread|https?|file)://[^)]+\)", r"\1", title)
+                # 2) 去残留的控制字符/多余空白
+                title = re.sub(r"[\x00-\x1f]+", " ", title)
+                title = re.sub(r"\s+", " ", title).strip(" ：:；;,，。.!！？?\"'“”「」")
+                # 3) 超长（>42字）按句号断句取前一段 + 省略号，不硬切
                 if len(title) > 42:
-                    title = claim_text(title, 42) or title[:42]
+                    first_clause = re.split(r"[。！？!？；;]", title)[0]
+                    title = (first_clause if len(first_clause) >= 8 else title[:40]).strip()
+                    if len(title) > 42:
+                        title = title[:40]
+                    title += "…"
                 cwd = row["cwd"] or ""
                 result.append(
                     Conversation(
