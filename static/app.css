@@ -541,6 +541,18 @@ body.resizing-detail .detail-pane { pointer-events: none; }
   font-size: 11.5px; line-height: 1.4; color: var(--ink);
 }
 .brief-item:focus .brief-title, .brief-item:hover .brief-title { color: var(--accent); }
+/* 来源徽标（替代原状态徽标位置，显示数据来自哪个 agent） */
+.brief-source {
+  flex: 0 0 auto; padding: 1px 6px; border-radius: 8px;
+  font-size: 8.5px; font-weight: 600; letter-spacing: .02em;
+  background: var(--teal-soft); color: var(--ink-2);
+}
+.brief-source.src-hermes { background: rgba(166,92,60,.14); color: var(--hermes); }
+.brief-source.src-codex { background: rgba(22,140,145,.14); color: var(--codex); }
+.brief-source.src-workbuddy { background: rgba(118,83,166,.14); color: var(--workbuddy); }
+.brief-source.src-claude { background: rgba(202,113,60,.14); color: #ca713c; }
+.brief-source.src-qoderwork { background: rgba(22,140,145,.14); color: var(--codex); }
+.brief-source.src-cursor { background: rgba(30,102,159,.14); color: #1e669f; }
 .brief-toggle {
   flex: 0 0 auto; color: var(--muted); font-size: 9px;
   transition: transform .15s ease;

@@ -1153,10 +1153,12 @@ function renderDaily(data) {
     const totalItems = achievements.length + unfinishedList.length;
     const itemLi = (it) => {
       const hasMsg = !!(it.last_user || it.last_reply);
+      const sourceLabel = SOURCE_LABELS[it.source] || it.source;
       return `<li class="brief-item"${hasMsg ? ' tabindex="0"' : ""}>
         <span class="brief-row">
           <span class="brief-dot" aria-hidden="true"></span>
           <span class="brief-title">${escapeHtml(it.title)}</span>
+          <span class="brief-source src-${escapeHtml(it.source)}">${escapeHtml(sourceLabel)}</span>
           ${hasMsg ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}
         </span>
         ${hasMsg ? `<div class="brief-detail" hidden>${[
