@@ -1160,6 +1160,7 @@ function renderDaily(data) {
           <span class="brief-title">${escapeHtml(it.title)}</span>
           <span class="brief-source src-${escapeHtml(it.source)}">${escapeHtml(sourceLabel)}</span>
           ${hasMsg ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}
+          <button class="brief-jump" type="button" data-source="${escapeHtml(it.source)}" data-id="${escapeHtml(it.conversation_id)}" title="打开该对话" aria-label="打开该对话">↗</button>
         </span>
         ${hasMsg ? `<div class="brief-detail" hidden>${[
           it.last_user ? `<div class="brief-msg user"><b>你最近说</b><span>${escapeHtml(it.last_user)}</span></div>` : "",
@@ -1190,6 +1191,14 @@ function renderDaily(data) {
       };
       li.addEventListener("click", toggle);
       li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    });
+    // 跳转按钮：切到找对话视图并打开该对话（阻止冒泡，不触发展开/收起）
+    brief.querySelectorAll(".brief-jump").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        setView("find");
+        await openDetail(btn.dataset.source, btn.dataset.id);
+      });
     });
   }
   if (data.warning) showToast(data.warning);

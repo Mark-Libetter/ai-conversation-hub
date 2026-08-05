@@ -558,6 +558,14 @@ body.resizing-detail .detail-pane { pointer-events: none; }
   transition: transform .15s ease;
 }
 .brief-item.expanded .brief-toggle { transform: rotate(180deg); color: var(--accent); }
+/* 跳转到该对话按钮 */
+.brief-jump {
+  flex: 0 0 auto; padding: 0 3px; margin-left: 2px;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 11px; line-height: 1;
+  border-radius: 3px; opacity: .55; transition: opacity .12s ease, color .12s ease;
+}
+.brief-item:hover .brief-jump, .brief-jump:hover { opacity: 1; color: var(--accent); }
 /* 展开区：最近对话原文（后端注入，无需请求） */
 .brief-detail { margin: 5px 0 4px 11px; }
 .brief-msg {
