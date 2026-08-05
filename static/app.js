@@ -1172,10 +1172,17 @@ function renderDaily(data) {
         ].join("")}</div>` : ""}
       </li>`;
     };
+    const today = localDateIso();
+    const canPrev = data.day > "2026-01-01";
+    const canNext = data.day < today;
     brief.innerHTML = `
       <div class="brief-label">
-        <span>${escapeHtml(dayLabel(data.day))}</span>
-        <strong>今日要点</strong>
+        <div class="brief-date-nav">
+          <button class="brief-date-btn" type="button" data-brief-day-prev ${canPrev ? "" : "disabled"} aria-label="前一天">‹</button>
+          <span>${escapeHtml(dayLabel(data.day))}</span>
+          <button class="brief-date-btn" type="button" data-brief-day-next ${canNext ? "" : "disabled"} aria-label="后一天">›</button>
+        </div>
+        <strong>${data.day === today ? "今日要点" : "当日要点"}</strong>
       </div>
       <div class="brief-copy">
         <ul class="brief-points-list">${items.map(itemLi).join("")}</ul>
@@ -1185,6 +1192,17 @@ function renderDaily(data) {
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;
+    // 日期切换：‹ 前一天 / › 后一天
+    brief.querySelector("[data-brief-day-prev]")?.addEventListener("click", () => {
+      const d = new Date(data.day + "T00:00:00");
+      d.setDate(d.getDate() - 1);
+      setDailyDate(d.toISOString().slice(0, 10));
+    });
+    brief.querySelector("[data-brief-day-next]")?.addEventListener("click", () => {
+      const d = new Date(data.day + "T00:00:00");
+      d.setDate(d.getDate() + 1);
+      setDailyDate(d.toISOString().slice(0, 10));
+    });
     // 展开/收起：直接用注入的最近消息，无需请求
     brief.querySelectorAll(".brief-item").forEach((li) => {
       const box = li.querySelector(".brief-detail");
