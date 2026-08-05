@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.20.3"
+APP_VERSION = "0.20.4"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
@@ -4294,7 +4294,7 @@ class ConversationIndex:
             body["max_tokens"] = min(8192, max(1, effective_max_tokens))
         effective_timeout = timeout or min(300, max(10, int(config.get("timeout") or 90)))
         request_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        headers = {"Content-Type": "application/json", "User-Agent": "AIConversationHub/1.0"}
+        headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AIConversationHub/1.0"}
         if config.get("api_key"):
             headers["Authorization"] = f"Bearer {config['api_key']}"
         request = urllib.request.Request(endpoint, data=request_body, headers=headers, method="POST")
@@ -4465,7 +4465,7 @@ class ConversationIndex:
         api_key = supplied_key or ("" if payload.get("clear_api_key") else current["api_key"])
         api_url = validate_api_base(api_url, api_key)
         endpoint = api_url if api_url.endswith("/models") else f"{api_url}/models"
-        headers = {"Accept": "application/json", "User-Agent": "AIConversationHub/1.0"}
+        headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AIConversationHub/1.0"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         request = urllib.request.Request(endpoint, headers=headers, method="GET")
