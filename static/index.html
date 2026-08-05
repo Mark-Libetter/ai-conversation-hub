@@ -694,6 +694,13 @@
 
     <template id="detailTemplate">
       <div class="detail-inner">
+        <div class="detail-head">
+          <div><div class="source-line"></div><h2 class="detail-title"></h2><p class="detail-meta"></p></div>
+          <div class="detail-head-actions">
+            <button class="favorite-button" type="button" aria-label="收藏"></button>
+            <button class="detail-close-button" type="button" aria-label="收起对话内容" title="收起对话内容">×</button>
+          </div>
+        </div>
         <section class="conversation-search-panel" aria-label="在当前对话中搜索">
           <label>
             <span class="search-mark"></span>
@@ -707,13 +714,6 @@
             <button class="conversation-search-clear" type="button" title="清除搜索" disabled>×</button>
           </div>
         </section>
-        <div class="detail-head">
-          <div><div class="source-line"></div><h2 class="detail-title"></h2><p class="detail-meta"></p></div>
-          <div class="detail-head-actions">
-            <button class="favorite-button" type="button" aria-label="收藏"></button>
-            <button class="detail-close-button" type="button" aria-label="收起对话内容" title="收起对话内容">×</button>
-          </div>
-        </div>
         <div class="detail-actions">
           <a class="button primary open-link" href="#">在客户端打开</a>
           <button class="button secondary copy-id" type="button">复制 ID</button>
