@@ -15,13 +15,9 @@ const SOURCE_LABELS = {
   codex: "Codex",
   workbuddy: "WorkBuddy",
   claude: "Claude Code",
-  codepilot: "CodePilot",
-  cursor: "Cursor",
-  marvis: "Marvis",
-  qclaw: "QClaw",
   qoderwork: "QoderWork",
 };
-const EXTRA_SOURCES = ["claude", "codepilot", "cursor", "marvis", "qclaw", "qoderwork"];
+const EXTRA_SOURCES = ["claude", "qoderwork"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
