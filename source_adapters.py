@@ -11,14 +11,18 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-EXTRA_SOURCES = ("claude", "qoderwork")
+EXTRA_SOURCES = ("claude", "qoderwork", "zcode")
 MAX_CLAUDE_TRANSCRIPT_BYTES = 100 * 1024 * 1024
 CUSTOM_SOURCE_PREFIX = "custom_"
 CUSTOM_FORMATS = {"jsonl", "markdown", "sqlite"}
 SOURCE_LABELS = {
     "claude": "Claude Code",
     "qoderwork": "QoderWork",
+    "zcode": "ZCode",
 }
+# QoderWork 产品改名谱系（Qoder -> QoderWork -> 千问办公/QwenWork），
+# 同一台机器可能同时存在新旧两代数据目录，需要合并读取以免丢对话
+QODERWORK_FAMILY_DIRS = ("QoderWork CN", "QoderWork", "QwenWorkCN", "QwenWork")
 SKIP_DISCOVERY_DIRS = {
     ".git", ".svn", "__pycache__", "node_modules", ".venv", "venv", "cache",
     "caches", "backup", "backups", "temp", "tmp", "$recycle.bin",
@@ -193,9 +197,11 @@ def default_candidates(source: str) -> list[Path]:
         return [home / ".claude"]
     if source == "qoderwork":
         return [
-            application_support / "QoderWork CN" / "data" / "agents.db",
-            application_support / "QoderWork" / "data" / "agents.db",
+            application_support / name / "data" / "agents.db"
+            for name in QODERWORK_FAMILY_DIRS
         ]
+    if source == "zcode":
+        return [home / ".zcode" / "cli" / "db" / "db.sqlite"]
     return []
 
 
@@ -336,6 +342,9 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
         if source == "qoderwork":
             valid = {"projects", "chats", "sub_chats", "messages"}.issubset(sqlite_tables(path))
             return valid, "QoderWork 会话数据库" if valid else "数据库结构不匹配"
+        if source == "zcode":
+            valid = {"session", "message", "part"}.issubset(sqlite_tables(path))
+            return valid, "ZCode 会话数据库" if valid else "数据库结构不匹配"
     except (OSError, sqlite3.DatabaseError):
         return False, "读取失败"
     return False, "未知来源"
@@ -388,12 +397,28 @@ def estimate_conversations(source: str, path: Path | None) -> int:
             )
             return valid, "QClaw 主会话目录" if valid else "未找到 QClaw 主会话清单"
         if source == "qoderwork":
+            seen: set[str] = set()
+            for db_path in _qoderwork_family_dbs(path):
+                try:
+                    with readonly_db(db_path) as conn:
+                        for row in conn.execute(
+                            """
+                            SELECT id FROM chats
+                            WHERE deleted_at IS NULL AND coalesce(chat_type,'task')='task'
+                            """
+                        ):
+                            seen.add(str(row["id"]))
+                except (OSError, sqlite3.DatabaseError):
+                    continue
+            return len(seen)
+        if source == "zcode":
             with readonly_db(path) as conn:
                 return int(
                     conn.execute(
                         """
-                        SELECT count(*) FROM chats
-                        WHERE deleted_at IS NULL AND coalesce(chat_type,'task')='task'
+                        SELECT count(*) FROM session
+                        WHERE parent_id IS NULL
+                        AND (time_archived IS NULL OR time_archived <= 0)
                         """
                     ).fetchone()[0]
                 )
@@ -697,6 +722,7 @@ def _candidate_filenames(source: str) -> tuple[str, ...]:
     return {
         "claude": ("history.jsonl",),
         "qoderwork": ("agents.db",),
+        "zcode": ("db.sqlite",),
     }.get(source, ())
 
 
@@ -1204,55 +1230,101 @@ def _load_qclaw(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
     return items, messages_by_id
 
 
+def _qoderwork_family_dbs(path: Path) -> list[Path]:
+    """Return the given agents.db plus any sibling database from the renamed
+    product family (Qoder -> QoderWork -> 千问办公/QwenWork) that lives in the
+    same AppData/Application Support root. Only the standard product directory
+    names trigger the sibling scan; a user-picked custom path loads alone."""
+    result = [path]
+    try:
+        app_dir = path.parent.parent
+        root = app_dir.parent
+    except (AttributeError, ValueError):
+        return result
+    if app_dir.name not in QODERWORK_FAMILY_DIRS or not root.is_dir():
+        return result
+    required = {"projects", "chats", "sub_chats", "messages"}
+    for name in QODERWORK_FAMILY_DIRS:
+        if name == app_dir.name:
+            continue
+        candidate = root / name / path.parent.name / path.name
+        if not candidate.is_file():
+            continue
+        try:
+            if required.issubset(sqlite_tables(candidate)):
+                result.append(candidate)
+        except (OSError, sqlite3.DatabaseError):
+            continue
+    return result
+
+
+def _load_qoderwork_db(
+    conn: sqlite3.Connection,
+    db_path: Path,
+    items: list[dict[str, Any]],
+    messages_by_id: dict[str, list[dict[str, Any]]],
+    seen_ids: set[str],
+) -> None:
+    rows = conn.execute(
+        """
+        SELECT c.*,p.name AS project_name,p.path AS project_path
+        FROM chats c JOIN projects p ON p.id=c.project_id
+        WHERE c.deleted_at IS NULL AND coalesce(c.chat_type,'task')='task'
+        ORDER BY c.updated_at DESC
+        """
+    ).fetchall()
+    for row in rows:
+        session_id = str(row["id"])
+        if session_id in seen_ids:
+            continue
+        message_rows = conn.execute(
+            """
+            SELECT role,searchable_text,parts,created_at
+            FROM messages
+            WHERE chat_id=? AND role IN ('user','assistant')
+            ORDER BY sequence,created_at
+            """,
+            (row["id"],),
+        )
+        messages: list[dict[str, Any]] = []
+        for message in message_rows:
+            text = redact(message["searchable_text"])
+            if not text:
+                parts = json_value(message["parts"], [])
+                text = content_text(parts)
+            if text:
+                messages.append(
+                    {
+                        "role": str(message["role"]),
+                        "text": text,
+                        "timestamp": epoch(message["created_at"]),
+                    }
+                )
+        if not any(message["role"] == "user" for message in messages):
+            continue
+        seen_ids.add(session_id)
+        messages_by_id[session_id] = messages
+        cwd = row["worktree_path"] or row["project_path"]
+        items.append(
+            conversation(
+                "qoderwork", session_id, row["name"], messages, cwd=cwd,
+                created_at=row["created_at"], updated_at=row["updated_at"],
+                source_kind=str(row["source"] or "qoderwork-sqlite"),
+                rollout_path=db_path,
+            )
+        )
+
+
 def _load_qoderwork(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
-    with readonly_db(path) as conn:
-        rows = conn.execute(
-            """
-            SELECT c.*,p.name AS project_name,p.path AS project_path
-            FROM chats c JOIN projects p ON p.id=c.project_id
-            WHERE c.deleted_at IS NULL AND coalesce(c.chat_type,'task')='task'
-            ORDER BY c.updated_at DESC
-            """
-        )
-        for row in rows:
-            message_rows = conn.execute(
-                """
-                SELECT role,searchable_text,parts,created_at
-                FROM messages
-                WHERE chat_id=? AND role IN ('user','assistant')
-                ORDER BY sequence,created_at
-                """,
-                (row["id"],),
-            )
-            messages: list[dict[str, Any]] = []
-            for message in message_rows:
-                text = redact(message["searchable_text"])
-                if not text:
-                    parts = json_value(message["parts"], [])
-                    text = content_text(parts)
-                if text:
-                    messages.append(
-                        {
-                            "role": str(message["role"]),
-                            "text": text,
-                            "timestamp": epoch(message["created_at"]),
-                        }
-                    )
-            if not any(message["role"] == "user" for message in messages):
-                continue
-            session_id = str(row["id"])
-            messages_by_id[session_id] = messages
-            cwd = row["worktree_path"] or row["project_path"]
-            items.append(
-                conversation(
-                    "qoderwork", session_id, row["name"], messages, cwd=cwd,
-                    created_at=row["created_at"], updated_at=row["updated_at"],
-                    source_kind=str(row["source"] or "qoderwork-sqlite"),
-                    rollout_path=path,
-                )
-            )
+    seen_ids: set[str] = set()
+    for db_path in _qoderwork_family_dbs(path):
+        try:
+            with readonly_db(db_path) as conn:
+                _load_qoderwork_db(conn, db_path, items, messages_by_id, seen_ids)
+        except (OSError, sqlite3.DatabaseError):
+            continue
     return items, messages_by_id
 
 
@@ -1558,9 +1630,92 @@ def load_custom_source(
         return [], {}, f"{type(exc).__name__}: {exc}"
 
 
+def _zcode_text_parts(conn: sqlite3.Connection, message_id: Any) -> str:
+    texts: list[str] = []
+    for row in conn.execute(
+        "SELECT data FROM part WHERE message_id=? ORDER BY sequence",
+        (message_id,),
+    ):
+        payload = json_value(row["data"], {})
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("type") or "").casefold() != "text":
+            continue
+        text = str(payload.get("text") or "").strip()
+        if text:
+            texts.append(text)
+    return redact("\n\n".join(texts))
+
+
+def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    items: list[dict[str, Any]] = []
+    messages_by_id: dict[str, list[dict[str, Any]]] = {}
+    with readonly_db(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, title, directory, time_created, time_updated
+            FROM session
+            WHERE parent_id IS NULL
+            AND (time_archived IS NULL OR time_archived <= 0)
+            ORDER BY time_updated DESC
+            """
+        ).fetchall()
+        for row in rows:
+            message_rows = conn.execute(
+                "SELECT id, data, time_created FROM message WHERE session_id=? ORDER BY sequence",
+                (row["id"],),
+            )
+            messages: list[dict[str, Any]] = []
+            model = ""
+            for message in message_rows:
+                payload = json_value(message["data"], {})
+                if not isinstance(payload, dict):
+                    continue
+                role = str(payload.get("role") or "").casefold()
+                semantics = payload.get("semantics")
+                semantics = semantics if isinstance(semantics, dict) else {}
+                origin = str(semantics.get("origin") or "")
+                # 只要真人输入与助手正式回复：
+                # 排除 todo_reminder / background_notification / timeline_event 等注入内容
+                if role == "user" and origin == "real_user":
+                    role = "user"
+                elif role == "assistant" and origin != "system":
+                    role = "assistant"
+                else:
+                    continue
+                text = _zcode_text_parts(conn, message["id"])
+                if not text:
+                    continue
+                if role == "assistant" and not model:
+                    model = redact(payload.get("modelID") or payload.get("model_id"), 120)
+                messages.append(
+                    {
+                        "role": role,
+                        "text": text,
+                        "timestamp": epoch(message["time_created"]),
+                    }
+                )
+            if not any(message["role"] == "user" for message in messages):
+                continue
+            session_id = str(row["id"])
+            messages_by_id[session_id] = messages
+            items.append(
+                conversation(
+                    "zcode", session_id, row["title"], messages,
+                    cwd=row["directory"],
+                    created_at=row["time_created"], updated_at=row["time_updated"],
+                    model=model,
+                    source_kind="zcode-cli",
+                    rollout_path=path,
+                )
+            )
+    return items, messages_by_id
+
+
 LOADERS = {
     "claude": _load_claude,
     "qoderwork": _load_qoderwork,
+    "zcode": _load_zcode,
 }
 
 

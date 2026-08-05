@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite10">
+    <link rel="stylesheet" href="/app.css?v=lite14">
   </head>
   <body>
     <div class="app-frame">
@@ -51,6 +51,9 @@
               <button class="source-row" data-source="qoderwork" type="button">
                 <span class="source-dot qoderwork"></span><span>QoderWork</span><b id="qoderworkCount">—</b>
               </button>
+              <button class="source-row" data-source="zcode" type="button">
+                <span class="source-dot zcode"></span><span>ZCode</span><b id="zcodeCount">—</b>
+              </button>
               <div id="customSourceRows" class="custom-source-rows"></div>
             </nav>
             <span id="refreshedAt" class="sidebar-refresh"></span>
@@ -77,6 +80,7 @@
               <option value="claude">Claude Code</option>
               <option value="hermes">Hermes</option>
               <option value="qoderwork">QoderWork</option>
+              <option value="zcode">ZCode</option>
             </select>
             <input id="searchInput" type="search" placeholder='自然语言直接搜；也可写 "短语"、OR、NOT、括号'>
             <button id="smartSearchToggle" class="smart-search-toggle active" type="button" aria-pressed="true" title="智能解析已开启：自然语言自动转布尔检索">智能</button>
@@ -446,6 +450,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite13" defer></script>
+    <script src="/app.js?v=lite14" defer></script>
   </body>
 </html>
