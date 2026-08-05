@@ -4916,7 +4916,10 @@ class ConversationIndex:
 
     def generate_conversation_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
         config = summary_runtime_config()
-        if not config.get("enabled") or not config.get("has_api_key"):
+        # 免密钥端点（如 OpenCode Zen）无需 API key 即可调用
+        keyless_providers = {"opencode", "freellmapi", "ollama", "lmstudio"}
+        needs_key = config.get("provider") not in keyless_providers
+        if not config.get("enabled") or (needs_key and not config.get("has_api_key")):
             raise ValueError("尚未配置可用的总结模型，请先在 设置 → 模型摘要 里填写接口与密钥")
 
         raw_items = payload.get("conversations") or []
