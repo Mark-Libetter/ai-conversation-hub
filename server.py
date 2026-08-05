@@ -3049,6 +3049,12 @@ class ConversationIndex:
                     title = claim_text(full_context, 120) or "Codex 对话"
                 else:
                     title = raw_title or clean_text(preview, 80) or row["id"]
+                # 清理 codex 超长标题：剥离引用链接，压缩到可读长度
+                # 形如 "[@继续完善…](thread://xxx) ；后续指令" → 去链接 + 截断
+                title = re.sub(r"\[[^\]]*\]\(thread://[^)]+\)", "", title)
+                title = re.sub(r"\s*[；;]\s*", "：", title).strip(" ：:，,")
+                if len(title) > 42:
+                    title = claim_text(title, 42) or title[:42]
                 cwd = row["cwd"] or ""
                 result.append(
                     Conversation(
