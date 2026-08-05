@@ -513,17 +513,6 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .brief-label strong, .brief-label span { display: block; }
 .brief-label span { color: var(--muted); font-size: 9px; letter-spacing: .08em; }
 .brief-label strong { margin-top: 5px; font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
-.brief-copy h2 {
-  margin: 0 0 8px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  font-family: Georgia, "Songti SC", serif;
-  font-size: 16px;
-  font-weight: 500;
-}
-.brief-copy h2 > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .status-badge {
   flex: 0 0 auto;
   padding: 1px 7px;
@@ -536,26 +525,41 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .status-done { background: var(--teal-soft); color: #21685f; }
 .status-ongoing { background: #e3edf6; color: #2c5f8d; }
 .status-blocked { background: #f4ddd6; color: #8a4639; }
-.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
-.brief-points-list li {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  min-width: 0;
-  font-size: 10px;
-  line-height: 1.4;
+/* 主线标题：和要点统一字号 */
+.brief-main { margin: 0 0 7px; }
+.brief-main-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.brief-main-title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  font-family: Georgia, "Songti SC", serif; font-size: 13px; font-weight: 600; color: var(--ink);
 }
-.brief-points-list li > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+.brief-main.expandable, .brief-item.expandable { cursor: pointer; outline: none; }
+.brief-main.expandable:hover .brief-main-title, .brief-item.expandable:hover .brief-title { color: var(--accent); }
+/* 要点列表：字号统一为 11px（和主线视觉层级协调） */
+.brief-points-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.brief-item { min-width: 0; }
+.brief-row { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.brief-title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  font-size: 11px; line-height: 1.4;
 }
-.brief-mark { flex: 0 0 auto; font-size: 10px; }
-.brief-points-list li.done { color: var(--ink-2); }
-.brief-points-list li.done .brief-mark { color: #21685f; }
-.brief-points-list li.open { color: var(--muted); }
-.brief-points-list li.open .brief-mark { color: #8a542d; }
+.brief-mark { flex: 0 0 auto; font-size: 11px; }
+.brief-item.done { color: var(--ink-2); }
+.brief-item.done .brief-mark { color: #21685f; }
+.brief-item.open { color: var(--muted); }
+.brief-item.open .brief-mark { color: #8a542d; }
+/* 展开标记 ▾ + 折叠详情 */
+.brief-toggle {
+  flex: 0 0 auto; margin-left: auto; color: var(--muted);
+  font-size: 10px; transition: transform .15s ease;
+}
+.expanded .brief-toggle { transform: rotate(180deg); color: var(--accent); }
+.brief-detail {
+  display: none; margin: 4px 0 5px 17px; padding: 6px 9px;
+  border-left: 2px solid var(--teal-soft); background: var(--teal-pale);
+  border-radius: 0 6px 6px 0;
+  font-size: 10.5px; line-height: 1.5; color: var(--ink-2);
+}
+.expanded > .brief-detail, .expanded .brief-detail { display: block; }
 .brief-empty { margin: 4px 0 0; font-size: 10px; }
 .brief-actions { display: grid; gap: 7px; justify-items: stretch; }
 .brief-actions > span { color: var(--muted); font-size: 8px; text-align: center; }

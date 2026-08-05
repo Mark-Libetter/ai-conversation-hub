@@ -1133,14 +1133,21 @@ function renderDaily(data) {
     const statusLabel = { done: "已完成", ongoing: "进行中", blocked: "受阻" }[focusStatus] || "进行中";
     const achievements = summary.achievements || [];
     const unfinishedList = summary.unfinished || summary.ongoing || [];
-    // 要点列表：完成✓ + 待继续○，跳过和主线同源的条目避免重复
+    // 主线详情：从同源的 achievement/unfinished 里取 detail，让焦点也能展开说明
+    const focusDetailSrc =
+      achievements.concat(unfinishedList).find((it) =>
+        ((it.source || "") + (it.conversation_id || it.id || "")) === focusKey
+      ) || {};
+    const focusParts = summaryItemParts(focusDetailSrc, focusStatus === "done" ? "achievement" : "unfinished");
+    const focusDetail = focusParts.detail || focusDetailSrc.reason || "";
+    // 要点列表：完成✓ + 待继续○，跳过和主线同源的条目；保留 detail 供展开
     const pointParts = (items, kind, limit) => {
       const out = [];
       for (const it of items) {
         const key = (it.source || "") + (it.conversation_id || it.id || "");
         if (key && key === focusKey) continue; // 去重主线
         const p = summaryItemParts(it, kind);
-        if (p?.title) out.push(p.title);
+        if (p?.title) out.push({ title: p.title, detail: p.detail || it.reason || "" });
         if (out.length >= limit) break;
       }
       return out;
@@ -1148,18 +1155,32 @@ function renderDaily(data) {
     const donePoints = pointParts(achievements, "achievement", 3);
     const openPoints = pointParts(unfinishedList, "unfinished", 2);
     const totalItems = achievements.length + unfinishedList.length;
-    const pointsHtml = (mark, cls, items) =>
-      items.map((t) => `<li class="${cls}"><span class="brief-mark">${mark}</span><span>${escapeHtml(t)}</span></li>`).join("");
+    // 每条要点：有 detail 时可点击展开（▾ 标记 + 折叠区）
+    const pointLi = (mark, cls, p) => {
+      const hasDetail = !!p.detail;
+      return `<li class="brief-item ${cls}${hasDetail ? " expandable" : ""}"${hasDetail ? ' tabindex="0"' : ""}>
+        <span class="brief-row"><span class="brief-mark">${mark}</span><span class="brief-title">${escapeHtml(p.title)}</span>${hasDetail ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}</span>
+        ${hasDetail ? `<p class="brief-detail">${escapeHtml(p.detail)}</p>` : ""}
+      </li>`;
+    };
+    const focusHasDetail = !!focusDetail;
     brief.innerHTML = `
       <div class="brief-label">
         <span>${escapeHtml(dayLabel(data.day))}</span>
         <strong>今日要点</strong>
       </div>
       <div class="brief-copy">
-        <h2>${escapeHtml(focus)} <span class="status-badge status-${focusStatus}">${statusLabel}</span></h2>
+        <div class="brief-main${focusHasDetail ? " expandable" : ""}"${focusHasDetail ? ' tabindex="0"' : ""}>
+          <div class="brief-main-row">
+            <strong class="brief-main-title">${escapeHtml(focus)}</strong>
+            <span class="status-badge status-${focusStatus}">${statusLabel}</span>
+            ${focusHasDetail ? '<span class="brief-toggle" aria-hidden="true">▾</span>' : ""}
+          </div>
+          ${focusHasDetail ? `<p class="brief-detail">${escapeHtml(focusDetail)}</p>` : ""}
+        </div>
         ${(donePoints.length || openPoints.length) ? `<ul class="brief-points-list">
-          ${pointsHtml("✓", "done", donePoints)}
-          ${pointsHtml("○", "open", openPoints)}
+          ${donePoints.map((p) => pointLi("✓", "done", p)).join("")}
+          ${openPoints.map((p) => pointLi("○", "open", p)).join("")}
         </ul>` : `<p class="muted brief-empty">暂无更多要点</p>`}
       </div>
       <div class="brief-actions">
@@ -1167,6 +1188,12 @@ function renderDaily(data) {
         <button class="button secondary" type="button" data-open-daily>完整回顾</button>
       </div>
     `;
+    // 展开/收起交互（主线 + 各要点共用）
+    brief.querySelectorAll(".expandable").forEach((el) => {
+      const toggle = () => el.classList.toggle("expanded");
+      el.addEventListener("click", toggle);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    });
   }
   if (data.warning) showToast(data.warning);
 }
