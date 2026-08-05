@@ -113,11 +113,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .primary-nav { padding: 14px 10px; flex: 0 0 auto; }
 .source-section {
-  flex: 1 1 auto;
-  min-height: 0;
+  margin-top: auto;
+  flex: 0 0 auto;
+  max-height: 50vh;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
+  resize: vertical;
+  min-height: 80px;
 }
 .primary-nav-item {
   width: 100%;
