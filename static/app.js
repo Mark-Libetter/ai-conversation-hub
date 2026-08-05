@@ -4416,7 +4416,8 @@ function applySmartSearch(rawValue) {
     const interp = interpretNaturalSearch(raw);
     state.smartInterp = interp;
     state.query = interp.boolean || raw;
-    state.range = interp.range && VALID_RANGES.has(interp.range) ? interp.range : "all";
+    // 仅当自然语言带时间词才改范围；否则保留用户手动选的范围，避免抹掉显式选择
+    if (interp.range && VALID_RANGES.has(interp.range)) state.range = interp.range;
   } else {
     state.smartInterp = null;
     state.query = raw;

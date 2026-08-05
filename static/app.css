@@ -55,6 +55,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   width: var(--sidebar);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   border-right: 1px solid var(--line-dark);
   background: #eee9df;
   transition: width .18s ease;
@@ -68,6 +69,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   align-items: center;
   gap: 11px;
   border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
 }
 .brand-copy { min-width: 0; }
 .brand-mark {
@@ -109,7 +111,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--ink);
 }
 
-.primary-nav { padding: 22px 10px; }
+.primary-nav { padding: 22px 10px; flex: 0 0 auto; }
+.source-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
 .primary-nav-item {
   width: 100%;
   display: flex;
@@ -149,6 +158,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   gap: 5px;
   padding: 9px 10px 13px;
   border-top: 1px solid var(--line);
+  flex: 0 0 auto;
 }
 .sidebar-utility button {
   min-width: 0;
@@ -262,7 +272,7 @@ body.sidebar-collapsed .utility-icon { display: grid; }
   line-height: 1;
 }
 .source-details[open] > summary::after { content: "−"; }
-.agent-switcher { max-height: 255px; margin-top: 9px; overflow: auto; scrollbar-width: thin; }
+.agent-switcher { max-height: none; margin-top: 9px; overflow: visible; padding-bottom: 6px; }
 .source-row {
   width: 100%;
   display: grid;

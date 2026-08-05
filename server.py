@@ -55,7 +55,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 10
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.20.1"
+APP_VERSION = "0.20.2"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "projects", "project_assignments",
