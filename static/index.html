@@ -803,6 +803,35 @@
           <button id="closeModelSettingsButton" class="button ghost" type="button">关闭</button>
         </div>
         <p class="muted">模型列表读取不会产生对话请求；只有你主动测试连接或生成摘要时才调用模型。</p>
+        <details class="model-setup-guide">
+          <summary aria-label="配置指南">📝 配置指南（小白点我，5 分钟接通免费模型）</summary>
+          <div class="setup-guide-body">
+            <p class="muted">本工具需要一个大模型来做「每日回顾 / 对话总结」。下面三条路任选一条，<strong>推荐方案 A</strong>，最简单稳定。</p>
+
+            <p><strong class="guide-tag tag-a">方案 A · Groq（推荐，免费 1000 次/天）</strong></p>
+            <ol class="guide-steps">
+              <li>打开 <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a>，用邮箱免费注册（不用信用卡）</li>
+              <li>左侧 <em>API Keys</em> → <em>Create API Key</em>，复制 <code>gsk-</code> 开头的密钥</li>
+              <li>回到这里：服务预设选「自定义」→ 接口地址填 <code>https://api.groq.com/openai/v1</code> → 密钥粘贴 → 点「读取模型列表」</li>
+              <li>选 <code>llama-3.3-70b-versatile</code>（质量好）或 <code>llama-3.1-8b-instant</code>（最快），保存即可</li>
+            </ol>
+            <p class="muted small">提示：Groq 的 Cloudflare 会拦截非浏览器请求，本工具已处理（v0.20.4+）。若仍报 403，请升级到最新版。</p>
+
+            <p><strong class="guide-tag tag-b">方案 B · FreeLLMAPI（本地聚合，全免密钥）</strong></p>
+            <ol class="guide-steps">
+              <li>下载安装 <a href="https://github.com/tashfeenahmed/freellmapi/releases/latest" target="_blank" rel="noopener">FreeLLMAPI 桌面版</a>，打开后常驻托盘</li>
+              <li>这里：服务预设选「FreeLLMAPI」→ 自动填好 <code>http://127.0.0.1:31415/v1</code></li>
+              <li>密钥填统一 key（FreeLLMAPI 安装后自动生成，在它的面板里查看，<code>freellmapi-</code> 开头）</li>
+              <li>模型选 <code>auto</code>（自动在免密钥源间择优），保存</li>
+            </ol>
+            <p class="muted small">提示：FreeLLMAPI 内置的免密钥源（OVH/kilo）有限速，连发会卡几分钟。重度使用建议走方案 A。</p>
+
+            <p><strong class="guide-tag tag-c">方案 C · 想用 DeepSeek 模型</strong></p>
+            <p class="muted small">Groq 不提供 DeepSeek。若你一定要用，去 <a href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> 注册（免费、不要信用卡）→ 生成 API key → 接口地址填 <code>https://integrate.api.nvidia.com/v1</code> → 选 <code>deepseek-ai/deepseek-v4-flash</code>。但说实话，方案 A 的 llama-3.3-70b 质量不输 DeepSeek。</p>
+
+            <p class="muted small">完整的接入 SOP 和排错见收件箱：<code>FreeLLMAPI接入SOP_2026-08-05.md</code></p>
+          </div>
+        </details>
         <div id="summaryFreeQuotaTip" class="free-quota-tip" hidden>
           <div>
             <strong>还没配置模型？</strong>
