@@ -1369,7 +1369,13 @@ $("#exportScope")?.addEventListener("change", (e) => {
   const count = state.checked.size;
   const hint = $("#exportState");
   if (e.target.value === "selected") {
-    hint.textContent = count ? `已勾选 ${count} 个对话` : "尚未勾选任何对话，请先在「找对话」里勾选";
+    if (count) {
+      hint.textContent = `已勾选 ${count} 个对话`;
+    } else {
+      hint.textContent = "尚未勾选，正在跳转到「找对话」…";
+      setView("find");
+      showToast("请勾选要导出的对话，然后点选择栏的「导出所选」");
+    }
   } else {
     hint.textContent = "";
   }
@@ -2386,6 +2392,18 @@ $("#clearSelectionButton")?.addEventListener("click", () => {
   state.checked.clear();
   renderList();
   updateSelectionBar();
+});
+
+// 导出所选：切到工具页，自动选"已勾选的对话"并预览
+$("#exportSelectedButton")?.addEventListener("click", () => {
+  if (!state.checked.size) { showToast("请先勾选要导出的对话"); return; }
+  setView("assets");
+  const scopeSelect = $("#exportScope");
+  if (scopeSelect) scopeSelect.value = "selected";
+  const dateLabel = $("#exportDateLabel");
+  if (dateLabel) dateLabel.style.display = "none";
+  $("#exportState").textContent = `已勾选 ${state.checked.size} 个对话`;
+  previewExport().catch((error) => showToast(error.message));
 });
 
 $("#loadMoreButton").addEventListener("click", async () => {
