@@ -3736,6 +3736,7 @@ class ConversationIndex:
             "text": clean_text(text, 420),
             "source": entry["source"],
             "conversation_id": entry["id"],
+            "title": clean_text(entry.get("title"), 120),
         }
         if reason:
             result["reason"] = clean_text(reason, 300)

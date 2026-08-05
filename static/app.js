@@ -836,23 +836,27 @@ function summaryEvidenceButton(item, project = false) {
 
 function summaryItemParts(item, tone) {
   const text = String(item?.text || "").trim();
-  let title = text;
+  // 优先用对话真实标题（agent 自己起的），没有才从摘要句子解析
+  const itemTitle = String(item?.title || "").trim();
+  let title = itemTitle;
   let detail = "";
   let match;
   if (tone === "achievement") {
     match = text.match(/^围绕“(.+?)”.*?[：:](.+)$/);
-    if (match) [title, detail] = [match[1], match[2]];
+    if (match) { if (!title) title = match[1]; detail = match[2]; }
+    else detail = text;
   } else if (tone === "unfinished") {
     match = text.match(/^“(.+?)”目前还没有完成/);
-    if (match) title = match[1];
+    if (match && !title) title = match[1];
     detail = item.reason || "";
   } else if (tone === "decision") {
     match = text.match(/^关于“(.+?)”.*?[：:](.+)$/);
-    if (match) [title, detail] = [match[1], match[2]];
+    if (match) { if (!title) title = match[1]; detail = match[2]; }
   } else if (tone === "next") {
-    title = "优先动作";
+    if (!title) title = "优先动作";
     detail = text;
   }
+  if (!title) title = text;
   return { title, detail };
 }
 
