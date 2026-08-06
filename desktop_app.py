@@ -102,7 +102,18 @@ def main() -> None:
         from server import run_server
         run_server(args.port, open_browser=False)
     else:
-        launch()
+        try:
+            launch()
+        except Exception as exc:  # 让双击失败时窗口停住、能看到原因
+            print(f"\n启动失败：{exc}")
+            print("排查提示：")
+            print("  1. 请先把整个文件夹从压缩包完整解压，再运行 AIConversationHub.exe；")
+            print("  2. 若被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任；")
+            print("  3. 确认 _internal 文件夹与 AIConversationHub.exe 在同一目录。")
+            try:
+                input("\n按回车键退出…")
+            except (EOFError, KeyboardInterrupt):
+                pass
 
 
 if __name__ == "__main__":

@@ -35,6 +35,10 @@ jobs:
       - name: Build onedir bundle
         run: pyinstaller --noconfirm --onedir --name AIConversationHub --add-data "static${{ matrix.sep }}static" desktop_app.py
 
+      - name: Bundle launcher and user guide
+        shell: bash
+        run: cp "packaging/启动.bat" "packaging/使用说明.txt" dist/AIConversationHub/
+
       - name: Zip the bundle
         shell: bash
         run: python -c "import shutil; shutil.make_archive('${{ matrix.asset }}', 'zip', 'dist/AIConversationHub')"
