@@ -36,23 +36,23 @@
               <button class="source-row active" data-source="all" type="button">
                 <span class="source-dot all"></span><span>全部来源</span><b id="allCount">—</b>
               </button>
-              <button class="source-row" data-source="codex" type="button">
-                <span class="source-dot codex"></span><span>Codex</span><b id="codexCount">—</b>
-              </button>
               <button class="source-row" data-source="workbuddy" type="button">
                 <span class="source-dot workbuddy"></span><span>WorkBuddy</span><b id="workbuddyCount">—</b>
               </button>
+              <button class="source-row" data-source="codex" type="button">
+                <span class="source-dot codex"></span><span>Codex</span><b id="codexCount">—</b>
+              </button>
               <button class="source-row" data-source="claude" type="button">
                 <span class="source-dot claude"></span><span>Claude Code</span><b id="claudeCount">—</b>
-              </button>
-              <button class="source-row" data-source="hermes" type="button">
-                <span class="source-dot hermes"></span><span>Hermes</span><b id="hermesCount">—</b>
               </button>
               <button class="source-row" data-source="qoderwork" type="button">
                 <span class="source-dot qoderwork"></span><span>QoderWork</span><b id="qoderworkCount">—</b>
               </button>
               <button class="source-row" data-source="zcode" type="button">
                 <span class="source-dot zcode"></span><span>ZCode</span><b id="zcodeCount">—</b>
+              </button>
+              <button class="source-row" data-source="hermes" type="button">
+                <span class="source-dot hermes"></span><span>Hermes</span><b id="hermesCount">—</b>
               </button>
               <div id="customSourceRows" class="custom-source-rows"></div>
             </nav>
@@ -75,12 +75,12 @@
             <span class="search-mark" aria-hidden="true"></span>
             <select id="searchAgentFilter" aria-label="搜索范围">
               <option value="all">全部 Agent</option>
-              <option value="codex">Codex</option>
               <option value="workbuddy">WorkBuddy</option>
+              <option value="codex">Codex</option>
               <option value="claude">Claude Code</option>
-              <option value="hermes">Hermes</option>
               <option value="qoderwork">QoderWork</option>
               <option value="zcode">ZCode</option>
+              <option value="hermes">Hermes</option>
             </select>
             <input id="searchInput" type="search" placeholder='自然语言直接搜；也可写 "短语"、OR、NOT、括号'>
             <button id="smartSearchToggle" class="smart-search-toggle active" type="button" aria-pressed="true" title="智能解析已开启：自然语言自动转布尔检索">智能</button>
@@ -96,7 +96,7 @@
                 <p><code>(日报 OR 周报) API</code>：括号组合</p>
               </div>
             </details>
-            <kbd>Ctrl K</kbd>
+            <kbd title="聚焦搜索框">/ 或 Ctrl K</kbd>
           </div>
           <div class="today-stamp">
             <div><strong id="todayDate">—</strong><span>本机只读索引</span></div>
@@ -204,7 +204,7 @@
                 <button id="previousDayButton" class="button ghost day-step" type="button" aria-label="前一天">前一天</button>
                 <input id="reviewDate" class="review-date" type="date" aria-label="选择回顾日期">
                 <button id="nextDayButton" class="button ghost day-step" type="button" aria-label="后一天">后一天</button>
-                <button id="generateDailyButton" class="button primary" type="button">重新生成摘要</button>
+                <button id="refreshDataButton" class="button ghost" type="button" title="重新读取各数据源、重建索引并刷新当前视图">刷新数据</button>
               </div>
             </div>
             <div id="dailyDateStrip" class="daily-date-strip" aria-label="最近日期"></div>
@@ -450,6 +450,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite14" defer></script>
+    <script src="/app.js?v=lite15" defer></script>
   </body>
 </html>

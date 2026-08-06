@@ -2061,6 +2061,21 @@ $("#reviewDate").addEventListener("change", (event) => {
   setDailyDate(event.target.value).catch((error) => showToast(error.message));
 });
 
+$("#refreshDataButton").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  showToast("正在重新读取数据源…");
+  try {
+    const result = await api("/api/refresh", { method: "POST", body: "{}" });
+    await Promise.all([loadSummary(), loadConversations(), loadDaily()]);
+    showToast(`已刷新 · 共 ${result.total ?? state.total} 个对话`);
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $("#dailyBody").addEventListener("click", async (event) => {
   const toggle = event.target.closest("#toggleDailyReportButton");
   if (toggle) {
@@ -2323,6 +2338,13 @@ $("#searchInput").addEventListener("keydown", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    setView("find");
+    $("#searchInput").focus();
+    return;
+  }
+  if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.target.closest("input, textarea, select, [contenteditable]")) return;
     event.preventDefault();
     setView("find");
     $("#searchInput").focus();
