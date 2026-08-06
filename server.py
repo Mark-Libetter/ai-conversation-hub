@@ -47,6 +47,7 @@ from source_adapters import (
     load_custom_source,
     load_extra_source,
 )
+import companion
 
 
 APP_DIR = RESOURCE_DIR
@@ -4164,6 +4165,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/token":
             self._json({"token": CSRF_TOKEN})
             return
+        if path == "/api/companion":
+            self._json({"ok": True, **companion.status()})
+            return
         if path == "/api/health":
             self._json({
                 "ok": True,
@@ -4267,6 +4271,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/note":
                 self._json(INDEX.save_note(payload))
                 return
+            if path == "/api/companion":
+                if "enabled" in payload:
+                    companion.set_enabled(bool(payload.get("enabled")))
+                if payload.get("regenerate_token"):
+                    companion.regenerate_token()
+                self._json({"ok": True, **companion.sync(INDEX)})
+                return
             if path == "/api/daily/note":
                 self._json(INDEX.save_daily_note(payload))
                 return
@@ -4333,6 +4344,13 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
     print("Local-only. Press Ctrl+C to stop.")
     # 首开提速：端口就绪后立即在后台预热首屏端点，与首批请求并发。
     threading.Thread(target=startup_warmup, name="hub-startup-warmup", daemon=True).start()
+    # 伴随端（小程序）局域网监听：默认关闭，按配置启停。
+    try:
+        if companion.read_config()["enabled"]:
+            print(f"Companion LAN listener on 0.0.0.0:{companion.read_config()['port']}")
+        companion.sync(INDEX)
+    except (OSError, sqlite3.DatabaseError) as exc:
+        print(f"companion listener not started: {exc}")
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

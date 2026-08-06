@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite16">
+    <link rel="stylesheet" href="/app.css?v=lite17">
   </head>
   <body>
     <div class="app-frame">
@@ -302,6 +302,16 @@
                 <p>内置 Codex 热门换肤风格，完全本地、即时切换并记住选择。</p>
                 <button id="openThemeSettingsButton" class="button secondary" type="button">选择皮肤</button>
               </section>
+              <section class="settings-card">
+                <span class="settings-index">05</span>
+                <h3>伴随端（小程序）</h3>
+                <p>在同一 Wi-Fi 下向手机提供已脱敏的日报/待办与随手记回传。默认关闭，开启后局域网监听。</p>
+                <div class="settings-card-actions">
+                  <label><input id="companionEnabled" type="checkbox"> 开启伴随端</label>
+                  <button id="companionRegenButton" class="button ghost" type="button">更换配对码</button>
+                </div>
+                <div id="companionState" class="muted">未开启</div>
+              </section>
             </div>
             <section class="source-health-card">
               <div><h3>数据源质量报告</h3><p id="sourceQualitySummary">路径、完整度、结构兼容性与索引消息数</p></div>
@@ -451,6 +461,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite16" defer></script>
+    <script src="/app.js?v=lite17" defer></script>
   </body>
 </html>
