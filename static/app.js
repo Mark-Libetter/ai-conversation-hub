@@ -45,7 +45,7 @@ const EXTRA_SOURCES = ["claude", "qoderwork", "zcode"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
-const VALID_VIEWS = new Set(["find", "daily", "assets", "settings"]);
+const VALID_VIEWS = new Set(["find", "daily", "projects", "assets", "settings"]);
 const customSourceIds = new Set();
 
 function registerCustomSources(sources = {}) {
@@ -193,6 +193,9 @@ const state = {
   dailyDate: localDateIso(),
   daily: null,
   dailyReportOpen: false,
+  projects: [],
+  openProjectId: null,
+  projectForm: { mode: "create", id: null, addAfter: false },
   smartMode: true,
   smartRaw: "",
   smartInterp: null,
@@ -1241,6 +1244,10 @@ function setView(view, { sync = true } = {}) {
   if (state.view === "assets") {
     loadAssets().catch((error) => showToast(error.message));
   }
+  if (state.view === "projects") {
+    state.openProjectId = null;
+    loadProjects().catch((error) => showToast(error.message));
+  }
   if (sync) syncUrl();
 }
 
@@ -2193,6 +2200,214 @@ $("#companionRegenButton")?.addEventListener("click", async () => {
     showToast(error.message);
   }
 });
+
+// ------------------------------------------------------------------ 我的项目
+async function loadProjects() {
+  const data = await api("/api/projects");
+  state.projects = data.projects || [];
+  if (state.openProjectId) {
+    await openProject(state.openProjectId);
+  } else {
+    renderProjectList();
+  }
+}
+
+function renderProjectList() {
+  const list = $("#projectList");
+  const detail = $("#projectDetail");
+  detail.hidden = true;
+  list.hidden = false;
+  $("#backToProjectsButton").hidden = true;
+  if (!state.projects.length) {
+    list.innerHTML = `<div class="empty-detail"><div><h2>还没有项目</h2><p>在「找对话」里勾选几个对话，点「归入项目」；或点「新建项目」。</p></div></div>`;
+    return;
+  }
+  list.innerHTML = state.projects.map((p) => `
+    <button class="project-card" type="button" data-project="${escapeHtml(p.id)}">
+      <span class="project-card-head">
+        <strong>${escapeHtml(p.name)}</strong>
+        <span class="chip">${p.count} 个对话</span>
+      </span>
+      <span class="project-desc">${escapeHtml(p.description || "暂无说明")}</span>
+      <span class="muted">更新于 ${relativeTime(p.updated_at)}</span>
+    </button>`).join("");
+}
+
+async function openProject(id) {
+  const data = await api(`/api/projects/${encodeURIComponent(id)}`);
+  state.openProjectId = id;
+  renderProjectDetail(data);
+}
+
+function renderProjectDetail(p) {
+  const list = $("#projectList");
+  const detail = $("#projectDetail");
+  list.hidden = true;
+  detail.hidden = false;
+  $("#backToProjectsButton").hidden = false;
+  const items = p.items || [];
+  detail.innerHTML = `
+    <div class="project-detail-head">
+      <div>
+        <h3>${escapeHtml(p.name)}</h3>
+        <p class="muted">${escapeHtml(p.description || "暂无说明")}</p>
+      </div>
+      <span class="project-detail-actions">
+        <button class="button ghost" type="button" data-edit-project="${escapeHtml(p.id)}">编辑</button>
+        <button class="button ghost" type="button" data-delete-project="${escapeHtml(p.id)}">删除项目</button>
+      </span>
+    </div>
+    ${items.length ? items.map((it) => `
+      <div class="project-item${it.present ? "" : " missing"}">
+        <span class="source-dot ${escapeHtml(it.source)}"></span>
+        <button class="project-item-main" type="button" ${it.present ? `data-open-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}"` : "disabled"}>
+          <strong>${escapeHtml(it.title)}</strong>
+          <small class="muted">${escapeHtml(conversationSourceLabel({ source: it.source }))} · ${it.message_count} 条 · ${it.updated_at ? relativeTime(it.updated_at) : ""}</small>
+        </button>
+        <button class="button ghost" type="button" data-remove-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}">移除</button>
+      </div>`).join("") : `<div class="empty-detail"><div><h2>这个项目还是空的</h2><p>回「找对话」勾选对话后点「归入项目」。</p></div></div>`}`;
+}
+
+function checkedConversations() {
+  return [...state.checked.values()].map((it) => ({ source: it.source, id: it.id }));
+}
+
+async function assignToProject(projectId) {
+  const conversations = checkedConversations();
+  if (!conversations.length) { showToast("请先勾选对话"); return; }
+  await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "add", id: projectId, conversations }) });
+  state.checked.clear();
+  renderList();
+  updateSelectionBar();
+  $("#projectAssignDialog").close();
+  showToast(`已归入 ${conversations.length} 个对话`);
+  if (state.view === "projects") loadProjects().catch(() => {});
+}
+
+function renderAssignList() {
+  const box = $("#assignProjectList");
+  box.innerHTML = state.projects.length
+    ? state.projects.map((p) => `
+        <button class="assign-project-row" type="button" data-assign="${escapeHtml(p.id)}">
+          <strong>${escapeHtml(p.name)}</strong><span class="muted">${p.count} 个对话</span>
+        </button>`).join("")
+    : `<p class="muted">还没有项目，先在下方新建一个。</p>`;
+}
+
+$("#addToProjectButton").addEventListener("click", async () => {
+  if (!state.checked.size) { showToast("请先勾选要归入的对话"); return; }
+  try {
+    const data = await api("/api/projects");
+    state.projects = data.projects || [];
+    renderAssignList();
+    $("#projectAssignDialog").showModal();
+  } catch (error) { showToast(error.message); }
+});
+
+$("#assignProjectList").addEventListener("click", (event) => {
+  const row = event.target.closest("[data-assign]");
+  if (row) assignToProject(row.dataset.assign).catch((error) => showToast(error.message));
+});
+
+$("#assignCreateButton").addEventListener("click", async () => {
+  const name = $("#assignNewName").value.trim();
+  if (!name) { showToast("先给新项目起个名字"); return; }
+  try {
+    const created = await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ action: "create", name, description: $("#assignNewDesc").value.trim() }),
+    });
+    $("#assignNewName").value = "";
+    $("#assignNewDesc").value = "";
+    await assignToProject(created.id);
+  } catch (error) { showToast(error.message); }
+});
+
+$("#closeAssignButton").addEventListener("click", () => $("#projectAssignDialog").close());
+
+function openProjectForm(mode, id = null, addAfter = false) {
+  state.projectForm = { mode, id, addAfter };
+  const existing = mode === "edit" ? state.projects.find((p) => p.id === id) : null;
+  $("#projectFormTitle").textContent = mode === "edit" ? "编辑项目" : "新建项目";
+  $("#projectNameInput").value = existing?.name || "";
+  $("#projectDescInput").value = existing?.description || "";
+  $("#projectFormDialog").showModal();
+}
+
+$("#newProjectButton").addEventListener("click", () => openProjectForm("create"));
+$("#projectFormCancel").addEventListener("click", () => $("#projectFormDialog").close());
+
+$("#projectFormSave").addEventListener("click", async () => {
+  const name = $("#projectNameInput").value.trim();
+  if (!name) { showToast("项目需要名字"); return; }
+  const { mode, id, addAfter } = state.projectForm;
+  try {
+    const result = await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        action: mode === "edit" ? "update" : "create",
+        id: mode === "edit" ? id : undefined,
+        name,
+        description: $("#projectDescInput").value.trim(),
+      }),
+    });
+    $("#projectFormDialog").close();
+    if (mode === "create" && addAfter) {
+      await assignToProject(result.id);
+    } else {
+      showToast("已保存");
+      loadProjects().catch(() => {});
+    }
+  } catch (error) { showToast(error.message); }
+});
+
+$("#projectList").addEventListener("click", (event) => {
+  const card = event.target.closest("[data-project]");
+  if (card) openProject(card.dataset.project).catch((error) => showToast(error.message));
+});
+
+$("#backToProjectsButton").addEventListener("click", () => {
+  state.openProjectId = null;
+  renderProjectList();
+});
+
+$("#projectDetail").addEventListener("click", async (event) => {
+  const open = event.target.closest("[data-open-conv]");
+  if (open) {
+    const [source, id] = open.dataset.openConv.split("|");
+    setView("find");
+    await openDetail(source, id);
+    detailPane.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  const remove = event.target.closest("[data-remove-conv]");
+  if (remove) {
+    const [source, id] = remove.dataset.removeConv.split("|");
+    await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ action: "remove", id: state.openProjectId, conversations: [{ source, id }] }),
+    });
+    openProject(state.openProjectId).catch(() => {});
+    return;
+  }
+  const edit = event.target.closest("[data-edit-project]");
+  if (edit) { openProjectForm("edit", edit.dataset.editProject); return; }
+  const del = event.target.closest("[data-delete-project]");
+  if (del) {
+    const ok = await new Promise((resolve) => {
+      wxConfirm(resolve);
+    });
+    if (!ok) return;
+    await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "delete", id: del.dataset.deleteProject }) });
+    state.openProjectId = null;
+    loadProjects().catch(() => {});
+  }
+});
+
+function wxConfirm(resolve) {
+  // 桌面环境用原生 confirm
+  resolve(window.confirm("删除该项目？（不会删除对话本身）"));
+}
 
 $("#dailyBody").addEventListener("click", async (event) => {
   const toggle = event.target.closest("#toggleDailyReportButton");

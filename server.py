@@ -779,6 +779,139 @@ def markdown_safe_paths(text: str) -> str:
     return "\n".join(out)
 
 
+def _ensure_projects(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          created_at REAL NOT NULL DEFAULT 0,
+          updated_at REAL NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_project_items (
+          project_id TEXT NOT NULL,
+          source TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          added_at REAL NOT NULL DEFAULT 0,
+          PRIMARY KEY (project_id, source, conversation_id)
+        )
+        """
+    )
+
+
+def projects_list() -> list[dict[str, Any]]:
+    with notes_db() as conn:
+        _ensure_projects(conn)
+        rows = conn.execute(
+            """
+            SELECT p.*,
+              (SELECT COUNT(*) FROM user_project_items i WHERE i.project_id = p.id) AS count
+            FROM user_projects p ORDER BY p.updated_at DESC
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def project_detail(project_id: str) -> dict[str, Any]:
+    with notes_db() as conn:
+        _ensure_projects(conn)
+        proj = conn.execute(
+            "SELECT * FROM user_projects WHERE id=?", (project_id,)
+        ).fetchone()
+        if not proj:
+            raise ValueError("项目不存在")
+        items = conn.execute(
+            "SELECT source, conversation_id, added_at FROM user_project_items "
+            "WHERE project_id=? ORDER BY added_at DESC",
+            (project_id,),
+        ).fetchall()
+    members = []
+    for item in items:
+        conv = INDEX._by_key.get((item["source"], item["conversation_id"]))
+        members.append(
+            {
+                "source": item["source"],
+                "id": item["conversation_id"],
+                "added_at": item["added_at"],
+                "present": bool(conv),
+                "title": conv.title if conv else "（已不在索引）",
+                "updated_at": conv.updated_at if conv else 0,
+                "workspace": conv.workspace if conv else "",
+                "message_count": conv.message_count if conv else 0,
+            }
+        )
+    return {**dict(proj), "items": members}
+
+
+def projects_mutate(payload: dict[str, Any]) -> dict[str, Any]:
+    action = clean_text(payload.get("action"), 20)
+    project_id = clean_text(payload.get("id"), 64)
+    now = time.time()
+    with notes_db() as conn:
+        _ensure_projects(conn)
+        if action == "create":
+            name = clean_text(payload.get("name"), 80)
+            if not name:
+                raise ValueError("项目需要名字")
+            project_id = secrets.token_urlsafe(8)
+            conn.execute(
+                "INSERT INTO user_projects(id,name,description,created_at,updated_at) VALUES(?,?,?,?,?)",
+                (project_id, name, clean_text(payload.get("description"), 2000), now, now),
+            )
+        elif action == "update":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            conn.execute(
+                "UPDATE user_projects SET name=?, description=?, updated_at=? WHERE id=?",
+                (
+                    clean_text(payload.get("name"), 80) or "未命名项目",
+                    clean_text(payload.get("description"), 2000),
+                    now,
+                    project_id,
+                ),
+            )
+        elif action == "delete":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            conn.execute("DELETE FROM user_project_items WHERE project_id=?", (project_id,))
+            conn.execute("DELETE FROM user_projects WHERE id=?", (project_id,))
+        elif action in {"add", "remove"}:
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            if not conn.execute(
+                "SELECT 1 FROM user_projects WHERE id=?", (project_id,)
+            ).fetchone():
+                raise ValueError("项目不存在")
+            for entry in payload.get("conversations") or []:
+                source = clean_text(entry.get("source"), 40)
+                conversation_id = clean_text(entry.get("id"), 200)
+                if not source or not conversation_id:
+                    continue
+                if action == "add":
+                    conn.execute(
+                        "INSERT OR IGNORE INTO user_project_items(project_id,source,conversation_id,added_at) "
+                        "VALUES(?,?,?,?)",
+                        (project_id, source, conversation_id, now),
+                    )
+                else:
+                    conn.execute(
+                        "DELETE FROM user_project_items WHERE project_id=? AND source=? AND conversation_id=?",
+                        (project_id, source, conversation_id),
+                    )
+            conn.execute(
+                "UPDATE user_projects SET updated_at=? WHERE id=?", (now, project_id)
+            )
+        else:
+            raise ValueError("不支持的项目操作")
+        conn.commit()
+    return {"ok": True, "id": project_id}
+
+
 def knowledge_tokens(value: Any) -> set[str]:
     text = re.sub(r"\s+", "", str(value or "").casefold())
     words = set(re.findall(r"[a-z0-9][a-z0-9_.-]{1,}", text))
@@ -4168,6 +4301,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/companion":
             self._json({"ok": True, **companion.status()})
             return
+        if path == "/api/projects":
+            self._json({"ok": True, "projects": projects_list()})
+            return
+        if path.startswith("/api/projects/"):
+            project_id = urllib.parse.unquote(path[len("/api/projects/"):])
+            self._json({"ok": True, **project_detail(project_id)})
+            return
         if path == "/api/health":
             self._json({
                 "ok": True,
@@ -4277,6 +4417,9 @@ class Handler(BaseHTTPRequestHandler):
                 if payload.get("regenerate_token"):
                     companion.regenerate_token()
                 self._json({"ok": True, **companion.sync(INDEX)})
+                return
+            if path == "/api/projects":
+                self._json(projects_mutate(payload))
                 return
             if path == "/api/daily/note":
                 self._json(INDEX.save_daily_note(payload))

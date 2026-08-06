@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite17">
+    <link rel="stylesheet" href="/app.css?v=lite18">
   </head>
   <body>
     <div class="app-frame">
@@ -26,6 +26,10 @@
           <button class="primary-nav-item" data-view="daily" type="button" title="每日回顾">
             <span class="nav-icon" aria-hidden="true">◎</span>
             <span class="nav-copy"><span>每日回顾</span><small>成果与未完成事项</small></span>
+          </button>
+          <button class="primary-nav-item" data-view="projects" type="button" title="我的项目">
+            <span class="nav-icon" aria-hidden="true">▤</span>
+            <span class="nav-copy"><span>我的项目</span><small>把对话归堆组织</small></span>
           </button>
         </nav>
 
@@ -169,6 +173,7 @@
                 <div id="selectionBar" class="selection-bar" hidden>
                   <span id="selectionCount">已选 0 个对话</span>
                   <span class="selection-actions">
+                    <button id="addToProjectButton" class="button secondary" type="button">归入项目</button>
                     <button id="exportSelectedButton" class="button secondary" type="button">导出所选</button>
                     <button id="selectAllVisibleButton" class="button ghost" type="button">全选当前结果</button>
                     <button id="clearSelectionButton" class="button ghost" type="button">清除选择</button>
@@ -212,6 +217,22 @@
               <div class="daily-loading">正在整理当天对话…</div>
             </div>
           </section>
+        </section>
+
+        <section id="projectsView" class="app-view" aria-label="我的项目">
+          <div class="projects-page">
+            <div class="page-heading">
+              <p class="eyebrow">MY PROJECTS</p>
+              <h2>我的项目</h2>
+              <p class="muted">把相关对话归成一堆，自己命名、写说明。不自动归类，完全由你组织。</p>
+            </div>
+            <div class="projects-toolbar">
+              <button id="newProjectButton" class="button primary" type="button">＋ 新建项目</button>
+              <button id="backToProjectsButton" class="button ghost" type="button" hidden>← 返回项目列表</button>
+            </div>
+            <div id="projectList" class="project-list" aria-live="polite"></div>
+            <div id="projectDetail" class="project-detail" hidden></div>
+          </div>
         </section>
 
         <section id="assetsView" class="app-view" aria-label="成果库">
@@ -460,7 +481,35 @@
       </div>
     </dialog>
 
+    <dialog id="projectAssignDialog" class="settings-dialog" aria-labelledby="projectAssignTitle">
+      <div class="dialog-body">
+        <h3 id="projectAssignTitle">归入项目</h3>
+        <p class="muted">点击一个项目立即归入；或新建一个项目并归入。</p>
+        <div id="assignProjectList" class="assign-project-list"></div>
+        <div class="assign-create">
+          <input id="assignNewName" class="input" type="text" placeholder="新项目名字" maxlength="80">
+          <input id="assignNewDesc" class="input" type="text" placeholder="说明（可选）" maxlength="2000">
+          <button id="assignCreateButton" class="button primary" type="button">创建并归入</button>
+        </div>
+        <div class="dialog-actions">
+          <button id="closeAssignButton" class="button ghost" type="button">关闭</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="projectFormDialog" class="settings-dialog" aria-labelledby="projectFormTitle">
+      <div class="dialog-body">
+        <h3 id="projectFormTitle">项目</h3>
+        <label class="dialog-field"><span>名字</span><input id="projectNameInput" class="input" type="text" maxlength="80" placeholder="给这堆对话起个名"></label>
+        <label class="dialog-field"><span>说明（可选）</span><textarea id="projectDescInput" class="input" rows="3" maxlength="2000" placeholder="这个项目是关于什么的…"></textarea></label>
+        <div class="dialog-actions">
+          <button id="projectFormSave" class="button primary" type="button">保存</button>
+          <button id="projectFormCancel" class="button ghost" type="button">取消</button>
+        </div>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite17" defer></script>
+    <script src="/app.js?v=lite18" defer></script>
   </body>
 </html>
