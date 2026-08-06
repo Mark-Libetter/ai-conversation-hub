@@ -1,0 +1,28 @@
+{
+  "pages": [
+    "pages/daily/daily",
+    "pages/pending/pending",
+    "pages/capture/capture",
+    "pages/pair/pair"
+  ],
+  "window": {
+    "navigationBarTitleText": "对话中心 · 伴随端",
+    "navigationBarBackgroundColor": "#1f3b34",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f2ea"
+  },
+  "tabBar": {
+    "color": "#8a8578",
+    "selectedColor": "#1f3b34",
+    "backgroundColor": "#fbf9f4",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/daily/daily", "text": "回顾" },
+      { "pagePath": "pages/pending/pending", "text": "待继续" },
+      { "pagePath": "pages/capture/capture", "text": "随手记" },
+      { "pagePath": "pages/pair/pair", "text": "连接" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

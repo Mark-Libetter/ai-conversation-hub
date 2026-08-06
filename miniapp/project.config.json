@@ -1,0 +1,21 @@
+{
+  "description": "AI Conversation Hub 伴随端（微信小程序 demo）。appid 留空时可在开发者工具中以测试号运行。",
+  "projectname": "ai-conversation-hub-companion",
+  "appid": "",
+  "compileType": "miniprogram",
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false,
+    "coverView": true,
+    "lazyloadPlaceholderEnable": false,
+    "ignoreUploadUnusedFiles": true
+  },
+  "editorSetting": {
+    "tabIndent": "space",
+    "tabSize": 2
+  },
+  "libVersion": "3.0.0",
+  "condition": {}
+}

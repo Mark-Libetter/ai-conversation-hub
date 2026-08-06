@@ -1,0 +1,48 @@
+<view class="container">
+  <view class="card row">
+    <view>
+      <view class="card-title">{{day}} {{isToday ? '· 今天' : ''}}</view>
+      <view class="muted" wx:if="{{stats}}">{{stats.conversations}} 个对话 · {{stats.messages}} 条消息</view>
+    </view>
+    <view>
+      <button class="btn ghost" size="mini" data-delta="-1" bindtap="shift">前一天</button>
+      <button class="btn ghost" size="mini" data-delta="1" bindtap="shift" disabled="{{isToday}}">后一天</button>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{error}}">{{error}}\n请到「连接」页检查配对。</view>
+
+  <block wx:elif="{{!loading}}">
+    <view class="card" wx:if="{{overview}}">
+      <view class="section-label">今日主线</view>
+      <view class="item-text">{{overview}}</view>
+    </view>
+
+    <view class="card" wx:if="{{mainFocus.length}}">
+      <view class="section-label">焦点</view>
+      <view class="item" wx:for="{{mainFocus}}" wx:key="conversation_id">
+        <view class="item-title">{{item.title || item.text}}<text class="src-tag">{{item.source}}</text></view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{achievements.length}}">
+      <view class="section-label">已完成</view>
+      <view class="item" wx:for="{{achievements}}" wx:key="conversation_id">
+        <view class="item-title">{{item.title}}</view>
+        <view class="item-text">{{item.text}}</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{unfinished.length}}">
+      <view class="section-label">待继续</view>
+      <view class="item" wx:for="{{unfinished}}" wx:key="conversation_id">
+        <view class="item-title">{{item.title}}<text class="src-tag">{{item.source}}</text></view>
+        <view class="item-text">{{item.text}}</view>
+      </view>
+    </view>
+
+    <view class="empty" wx:if="{{!overview && !mainFocus.length && !unfinished.length}}">当天暂无可回顾的内容。</view>
+  </block>
+
+  <view class="empty" wx:elif="{{loading}}">正在整理当天对话…</view>
+</view>
