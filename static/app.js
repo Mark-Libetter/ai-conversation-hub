@@ -2878,7 +2878,9 @@ $("#resetThemeButton").addEventListener("click", () => {
 });
 
 async function boot() {
+  const DEBUG = /[?&]debug=1/.test(location.search);
   const _log = (msg) => {
+    if (!DEBUG) return;
     const el = document.getElementById("bootDebug") || (() => {
       const d = document.createElement("div");
       d.id = "bootDebug";
