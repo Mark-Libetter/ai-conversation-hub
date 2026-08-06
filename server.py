@@ -729,6 +729,55 @@ def markdown_text(value: Any) -> str:
     return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def anonymize_home_paths(text: str) -> str:
+    """Replace the local user home directory with ~ so exports do not leak
+    machine-specific paths and stay readable in knowledge bases."""
+    home = Path.home()
+    variants = {str(home), home.as_posix()}
+    posix = home.as_posix()
+    drive_match = re.match(r"([A-Za-z]):/(.*)", posix)
+    if drive_match:
+        variants.add(f"/{drive_match.group(1).lower()}/{drive_match.group(2)}")
+    for variant in sorted(variants, key=len, reverse=True):
+        if variant:
+            text = text.replace(variant, "~")
+    return text
+
+
+_EXPORT_WIN_PATH = re.compile(r"(?:[A-Za-z]:|~)\\[^\s`\"'<>|，。；！？、）】」』]+")
+_EXPORT_UNIX_PATH = re.compile(
+    r"(?<![\w/.])(?:~/(?:[\w.@-]+/)*[\w.@-]+"
+    r"|/(?:Users|home|tmp|var|etc|opt|private)/(?:[\w.@-]+/)*[\w.@-]+)"
+)
+
+
+def _wrap_paths_outside_code(line: str) -> str:
+    parts = re.split(r"(`[^`]*`)", line)
+    for index in range(0, len(parts), 2):
+        part = _EXPORT_WIN_PATH.sub(lambda m: f"`{m.group(0)}`", parts[index])
+        part = _EXPORT_UNIX_PATH.sub(lambda m: f"`{m.group(0)}`", part)
+        parts[index] = part
+    return "".join(parts)
+
+
+def markdown_safe_paths(text: str) -> str:
+    """Wrap bare absolute paths in inline code so Markdown backslash escapes
+    do not mangle Windows paths when the export lands in notes/knowledge bases."""
+    out: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence or stripped.startswith(("\t", "    ")):
+            out.append(line)
+            continue
+        out.append(_wrap_paths_outside_code(line))
+    return "\n".join(out)
+
+
 def knowledge_tokens(value: Any) -> set[str]:
     text = re.sub(r"\s+", "", str(value or "").casefold())
     words = set(re.findall(r"[a-z0-9][a-z0-9_.-]{1,}", text))
@@ -3374,6 +3423,7 @@ class ConversationIndex:
             raise ValueError("仅支持 Markdown 或 JSONL")
         include_messages = payload.get("include_messages", True) is not False
         include_notes = payload.get("include_notes", True) is not False
+        anonymize_paths = payload.get("anonymize_paths", True) is not False
         project_id = clean_text(payload.get("project_id"), 120)
         now = time.time()
         project_name = ""
@@ -3433,11 +3483,29 @@ class ConversationIndex:
             filename = f"{base_name}.jsonl"
             mime = "application/x-ndjson;charset=utf-8"
         else:
+            def prep(text: Any) -> str:
+                value = markdown_text(text)
+                if anonymize_paths:
+                    value = anonymize_home_paths(value)
+                return markdown_safe_paths(value)
+
+            total_messages = sum(len(bundle["messages"]) for bundle in bundles)
+            scope_label = f"day={payload.get('day')}" if scope == "day" else scope
             export_lines = [
+                "---",
+                f"title: {json.dumps(str(project_name or 'AI 对话导出'), ensure_ascii=False)}",
+                "generator: AI Conversation Hub Lite",
+                f"exported_at: {datetime.fromtimestamp(now, LOCAL_TZ).isoformat(timespec='seconds')}",
+                f"scope: {scope_label}",
+                f"conversations: {len(bundles)}",
+                f"messages: {total_messages}",
+                "content_policy: user_assistant_only",
+                "---",
+                "",
                 f"# {project_name or 'AI 对话导出'}",
                 "",
                 f"> 导出时间：{datetime.fromtimestamp(now, LOCAL_TZ).isoformat(timespec='seconds')}",
-                f"> 范围：{scope}；对话数：{len(bundles)}",
+                f"> 范围：{scope_label}；对话数：{len(bundles)}；消息数：{total_messages}",
                 "> 仅包含用户/助手对话正文。",
                 "",
                 "",
@@ -3446,16 +3514,16 @@ class ConversationIndex:
                 item = bundle["conversation"]
                 export_lines.extend(
                     [
-                        f"### {item['title']}",
+                        f"### {prep(item['title'])}",
                         "",
                         f"- 来源：{item['source']}",
                         f"- 对话 ID：`{item['id']}`",
-                        f"- 工作区：{item['workspace'] or '未命名'}",
+                        f"- 工作区：{prep(item['workspace']) or '未命名'}",
                         f"- 最近活动：{datetime.fromtimestamp(item['updated_at'], LOCAL_TZ).isoformat(timespec='seconds')}",
                     ]
                 )
                 if include_notes and item["note"]:
-                    export_lines.extend([f"- 备注：{markdown_text(item['note'])}"])
+                    export_lines.extend([f"- 备注：{prep(item['note'])}"])
                 if item["tags"]:
                     export_lines.extend([f"- 标签：{', '.join(item['tags'])}"])
                 export_lines.append("")
@@ -3469,7 +3537,7 @@ class ConversationIndex:
                         [
                             f"#### {role}{f' · {timestamp}' if timestamp else ''}",
                             "",
-                            markdown_text(message["text"]),
+                            prep(message["text"]),
                             "",
                         ]
                     )

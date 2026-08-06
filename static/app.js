@@ -23,6 +23,7 @@ window.addEventListener("unhandledrejection", (e) => {
 const SAVED_VIEWS_KEY = "conversation-hub-v6-saved-views";
 const DETAIL_WIDTH_KEY = "conversation-hub-detail-width";
 const SOURCE_DETAILS_KEY = "conversation-hub-source-details-open";
+const SOURCE_ORDER_KEY = "conversation-hub-source-order";
 const SIDEBAR_COLLAPSED_KEY = "conversation-hub-sidebar-collapsed";
 const THEME_KEY = "ai-hub-theme";
 const THEMES = {
@@ -394,6 +395,74 @@ function initSourceDetails() {
       // Keep the interaction available even when storage is disabled.
     }
   });
+}
+
+function builtinSourceRows() {
+  return [...document.querySelectorAll("#agentSwitcher .source-row[data-source]")]
+    .filter((row) => row.dataset.source !== "all");
+}
+
+function applySourceOrder(order) {
+  if (!Array.isArray(order) || !order.length) return;
+  const switcher = $("#agentSwitcher");
+  const custom = $("#customSourceRows");
+  const rows = builtinSourceRows();
+  const rowById = Object.fromEntries(rows.map((row) => [row.dataset.source, row]));
+  for (const id of order) if (rowById[id]) switcher.insertBefore(rowById[id], custom);
+  for (const row of rows) if (!order.includes(row.dataset.source)) switcher.insertBefore(row, custom);
+
+  const select = $("#searchAgentFilter");
+  if (!select) return;
+  const options = [...select.options].filter((opt) => opt.value !== "all");
+  const optById = Object.fromEntries(options.map((opt) => [opt.value, opt]));
+  select.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "all";
+  allOpt.textContent = "全部 Agent";
+  select.appendChild(allOpt);
+  for (const id of order) if (optById[id]) select.appendChild(optById[id]);
+  for (const opt of options) if (!order.includes(opt.value)) select.appendChild(opt);
+}
+
+function persistSourceOrder() {
+  try {
+    localStorage.setItem(SOURCE_ORDER_KEY, JSON.stringify(builtinSourceRows().map((r) => r.dataset.source)));
+  } catch {
+    // Ordering is a convenience; ignore storage failures.
+  }
+}
+
+function initSourceDrag() {
+  const switcher = $("#agentSwitcher");
+  let dragged = null;
+  for (const row of builtinSourceRows()) {
+    row.draggable = true;
+    row.title = "拖动可调整来源排序";
+  }
+  switcher.addEventListener("dragstart", (event) => {
+    const row = event.target.closest(".source-row[data-source]");
+    if (!row || row.dataset.source === "all") return;
+    dragged = row;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    try { event.dataTransfer.setData("text/plain", row.dataset.source); } catch {}
+  });
+  switcher.addEventListener("dragover", (event) => {
+    if (!dragged) return;
+    const row = event.target.closest(".source-row[data-source]:not([data-source='all'])");
+    if (!row || row === dragged) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const after = event.clientY > rect.top + rect.height / 2;
+    switcher.insertBefore(dragged, after ? row.nextSibling : row);
+  });
+  const settle = () => {
+    if (dragged) { dragged.classList.remove("dragging"); persistSourceOrder(); }
+    dragged = null;
+  };
+  switcher.addEventListener("drop", (event) => { if (dragged) { event.preventDefault(); settle(); } });
+  switcher.addEventListener("dragend", settle);
+  applySourceOrder(JSON.parse(localStorage.getItem(SOURCE_ORDER_KEY) || "null") || []);
 }
 
 function escapeHtml(value) {
@@ -1351,6 +1420,7 @@ function exportPayload() {
     format: $("#exportFormat").value,
     include_messages: $("#exportMessages").checked,
     include_notes: $("#exportNotes").checked,
+    anonymize_paths: $("#exportAnonPaths")?.checked !== false,
   };
   if (scope === "selected") {
     const selected = [...state.checked.values()];
@@ -1975,7 +2045,12 @@ $("#previewExportButton").addEventListener("click", () => {
 });
 $("#downloadExportButton").addEventListener("click", () => {
   if (!state.exportResult) return;
-  downloadText(state.exportResult.filename, state.exportResult.content, state.exportResult.mime);
+  let content = state.exportResult.content;
+  // Markdown 加 UTF-8 BOM，避免 Windows 记事本/部分知识库工具按 ANSI 误判乱码
+  if (state.exportResult.filename.endsWith(".md") && !content.startsWith("\ufeff")) {
+    content = "\ufeff" + content;
+  }
+  downloadText(state.exportResult.filename, content, state.exportResult.mime);
   showToast("导出文件已下载");
 });
 
@@ -2563,6 +2638,7 @@ async function boot() {
     setDetailOpen(false);
     initDetailResizer();
     initSourceDetails();
+    initSourceDrag();
     _log("初始化完成…");
     $("#todayDate").textContent = new Intl.DateTimeFormat("zh-CN", {
       timeZone: "Asia/Shanghai",

@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite14">
+    <link rel="stylesheet" href="/app.css?v=lite16">
   </head>
   <body>
     <div class="app-frame">
@@ -244,6 +244,7 @@
                 <div class="export-options">
                   <label><input id="exportMessages" type="checkbox" checked> 对话正文</label>
                   <label><input id="exportNotes" type="checkbox" checked> 标签与备注</label>
+                  <label title="将 C:\Users\用户名 等主目录路径替换为 ~，避免泄露本机路径、减少知识库乱码"><input id="exportAnonPaths" type="checkbox" checked> 路径脱敏（主目录→~）</label>
                 </div>
                 <div class="asset-actions">
                   <button id="previewExportButton" class="button secondary" type="button">生成预览</button>
@@ -450,6 +451,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite15" defer></script>
+    <script src="/app.js?v=lite16" defer></script>
   </body>
 </html>

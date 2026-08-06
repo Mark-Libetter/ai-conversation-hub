@@ -304,6 +304,8 @@ body.sidebar-collapsed .utility-icon { display: grid; }
 .source-row.source-updating { opacity: .6; cursor: progress; }
 .source-row:hover, .source-row.active { background: rgba(255,255,255,.58); }
 .source-row b { font-size: 10px; font-weight: 600; color: var(--muted); }
+.source-row.dragging { opacity: .4; cursor: grabbing; }
+.source-row[draggable="true"] { cursor: grab; }
 .settings-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sidebar-refresh {
   display: block;
