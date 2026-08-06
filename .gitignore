@@ -19,3 +19,9 @@ __pycache__/
 *.log
 UserData/
 .trash/
+
+# PyInstaller 打包产物
+build/
+dist/
+*.spec
+.buildenv/

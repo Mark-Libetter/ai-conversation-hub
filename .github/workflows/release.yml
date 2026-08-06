@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: AIConversationHub-Windows
+            sep: ";"
+          - os: macos-latest
+            asset: AIConversationHub-macOS
+            sep: ":"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build onedir bundle
+        run: pyinstaller --noconfirm --onedir --name AIConversationHub --add-data "static${{ matrix.sep }}static" desktop_app.py
+
+      - name: Zip the bundle
+        shell: bash
+        run: python -c "import shutil; shutil.make_archive('${{ matrix.asset }}', 'zip', 'dist/AIConversationHub')"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}.zip
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: false
+
+      - name: Create GitHub Release with installers
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            assets/AIConversationHub-Windows/AIConversationHub-Windows.zip
+            assets/AIConversationHub-macOS/AIConversationHub-macOS.zip
+          generate_release_notes: true
+          body: |
+            一键下载、解压即用，无需安装 Python。
+
+            - **AIConversationHub-Windows.zip**：解压后运行 `AIConversationHub.exe`，自动起服务并打开浏览器。
+            - **AIConversationHub-macOS.zip**：解压后运行 `AIConversationHub`（首次若提示无权限，终端执行 `chmod +x AIConversationHub`）。
+
+            数据只保存在本机，原始对话只读；首次启动在界面里选择/确认数据源即可。
