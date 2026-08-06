@@ -43,7 +43,8 @@
 
 ### 运行
 ```bash
-python server.py
+python server.py        # Windows
+python3 server.py       # macOS / Linux
 ```
 浏览器打开 `http://127.0.0.1:8765`。
 
@@ -51,6 +52,13 @@ python server.py
 
 ### 桌面启动（Windows）
 双击 `launcher.py` 或运行 `python launcher.py`，会自动启动服务并打开浏览器。
+`修复数据源.cmd` 是 Windows 下的数据源修复快捷入口。
+
+### 桌面启动（macOS）
+双击 `start-macos.command`（首次可能需要在「安全性与隐私」里允许打开），它会自动寻找
+python3、启动服务并打开浏览器；或手动运行 `python3 launcher.py`。
+macOS 的数据目录约定与 Windows 一致：各 Agent 的 `~/.codex`、`~/.hermes`、`~/.workbuddy`、
+`~/.claude`、`~/.zcode`，以及 `~/Library/Application Support/` 下的 QoderWork/千问办公 数据库。
 
 ## 功能一览
 
@@ -100,10 +108,11 @@ static/
   app.js            # 前端逻辑
   index.html        # 页面结构
   app.css           # 样式
-launcher.py         # Windows 桌面启动器
+launcher.py         # 跨平台桌面启动器（起服务+开浏览器）
 desktop_app.py      # 桌面应用壳
-app_paths.py        # 数据/资源目录解析
-repair_sources.py   # 数据源配置修复工具（修复数据源.cmd 是它的快捷入口）
+app_paths.py        # 数据/资源目录解析（含 macOS 路径约定）
+repair_sources.py   # 数据源配置修复工具（修复数据源.cmd 是它的 Windows 快捷入口）
+start-macos.command # macOS 双击启动脚本
 sources.example.json# 数据源配置示例
 ```
 
