@@ -25,3 +25,6 @@ build/
 dist/
 *.spec
 .buildenv/
+
+# 运行时实例信息（端口复用）
+instance.json

@@ -52,7 +52,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.1.7"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "conversation_relations",
@@ -4341,6 +4341,7 @@ class Handler(BaseHTTPRequestHandler):
             path in {"/api/summary", "/api/sources", "/api/daily", "/api/conversations"}
             or path.startswith("/api/conversation/")
             or path.startswith("/api/conversation-messages/")
+            or path.startswith("/agent/")
         ):
             INDEX.maybe_refresh()
         if path == "/api/token":
@@ -4431,6 +4432,146 @@ class Handler(BaseHTTPRequestHandler):
             with notes_db() as conn:
                 notes = [dict(row) for row in conn.execute("SELECT * FROM notes ORDER BY updated_at DESC")]
             self._json({"version": 1, "exported_at": time.time(), "notes": notes})
+            return
+        # ---- /agent/* ：面向 AI agent 的只读检索 API（P0，本地开放，无需令牌） ----
+        if path == "/agent/ping":
+            self._json({"ok": True, "app": "AIConversationHub", "app_version": APP_VERSION, "time": time.time()})
+            return
+        if path == "/agent/search":
+            days = (params.get("days") or [""])[0]
+            time_range = {"1": "today", "3": "3d", "7": "7d", "30": "30d"}.get(days, "all")
+            try:
+                limit = min(50, max(1, int((params.get("limit") or ["10"])[0])))
+            except ValueError:
+                limit = 10
+            result = INDEX.list(
+                source=(params.get("source") or ["all"])[0],
+                query=(params.get("q") or [""])[0],
+                time_range=time_range,
+                status=(params.get("status") or ["all"])[0],
+                workspace="all",
+                native_project="all",
+                favorites=(params.get("favorites") or ["0"])[0] == "1",
+                tag=(params.get("tag") or [""])[0],
+                limit=limit,
+                offset=0,
+            )
+            results = []
+            for it in result.get("items") or []:
+                snippet = (it.get("match_snippet") or it.get("preview") or "").strip().replace("\n", " ")
+                results.append({
+                    "source": it.get("source"),
+                    "id": it.get("id"),
+                    "title": it.get("title"),
+                    "workspace": it.get("workspace"),
+                    "time": datetime.fromtimestamp(float(it.get("updated_at") or 0), LOCAL_TZ).strftime("%Y-%m-%d %H:%M"),
+                    "messages": it.get("message_count"),
+                    "tags": list(it.get("tags") or []),
+                    "status": it.get("user_status") or "",
+                    "snippet": snippet[:160],
+                })
+            self._json({
+                "total": result.get("total"),
+                "results": results,
+                "hint": "详情: GET /agent/conversation/{source}/{id}?level=summary|full&budget=8000",
+            })
+            return
+        if path.startswith("/agent/conversation/"):
+            parts = path.split("/", 4)
+            if len(parts) != 5:
+                self._json({"error": "Invalid agent conversation path"}, 400)
+                return
+            source = urllib.parse.unquote(parts[3])
+            conversation_id = urllib.parse.unquote(parts[4])
+            detail = INDEX.get(source, conversation_id)
+            if not detail:
+                self._json({"error": "Not found"}, 404)
+                return
+            item = detail["conversation"]
+            overview = detail.get("overview") or {}
+            meta = {
+                "source": item.get("source"),
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "workspace": item.get("workspace"),
+                "time": datetime.fromtimestamp(float(item.get("updated_at") or 0), LOCAL_TZ).strftime("%Y-%m-%d %H:%M"),
+                "messages_total": item.get("message_count"),
+                "tags": item.get("tags") or [],
+                "status": item.get("user_status") or "",
+                "favorite": bool(item.get("favorite")),
+                "note": item.get("note") or "",
+            }
+            level = (params.get("level") or ["summary"])[0]
+            if level != "full":
+                self._json({"meta": meta, "overview": overview})
+                return
+            try:
+                budget = min(60000, max(500, int((params.get("budget") or ["8000"])[0])))
+            except ValueError:
+                budget = 8000
+            messages = detail.get("messages") or []
+            picked: list[str] = []
+            used = 0
+            start_index = len(messages)
+            for i in range(len(messages) - 1, -1, -1):
+                m = messages[i]
+                role = str(m.get("role") or "?").upper()
+                ts = datetime.fromtimestamp(float(m.get("timestamp") or 0), LOCAL_TZ).strftime("%m-%d %H:%M")
+                block = f"### {role} ({ts})\n{str(m.get('text') or '').strip()}\n"
+                if used + len(block) > budget:
+                    break
+                picked.append(block)
+                used += len(block)
+                start_index = i
+            self._json({
+                "meta": meta,
+                "overview": overview,
+                "messages_markdown": "\n".join(reversed(picked)),
+                "messages_returned": len(picked),
+                "messages_in_detail": len(messages),
+                "messages_total": meta["messages_total"],
+                "truncated": start_index > 0,
+                "budget_chars": budget,
+            })
+            return
+        if path == "/agent/daily":
+            date_value = (params.get("date") or [""])[0]
+            try:
+                data = INDEX.daily_summary(date_value or None)
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            summary = data.get("summary") or {}
+            self._json({
+                "day": data.get("day"),
+                "stats": data.get("stats"),
+                "conversations": [
+                    {
+                        "source": c.get("source"),
+                        "id": c.get("id"),
+                        "title": c.get("title"),
+                        "messages": c.get("message_count"),
+                        "status": c.get("user_status") or "",
+                    }
+                    for c in data.get("conversations") or []
+                ],
+                "focus": [(f.get("title") or f.get("text") or "") for f in (summary.get("main_focus") or [])],
+                "unfinished": [
+                    {"title": (u.get("title") or u.get("text") or ""), "reason": u.get("reason") or ""}
+                    for u in (summary.get("unfinished") or [])
+                ][:6],
+            })
+            return
+        if path == "/agent/projects":
+            self._json({"projects": projects_list()})
+            return
+        if path.startswith("/agent/projects/"):
+            project_id = urllib.parse.unquote(path[len("/agent/projects/"):])
+            detail = project_detail(project_id)
+            if not detail:
+                self._json({"error": "Not found"}, 404)
+                return
+            self._json(detail)
             return
         self.send_error(404)
 

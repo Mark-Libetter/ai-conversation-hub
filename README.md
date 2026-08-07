@@ -43,6 +43,39 @@
 
 **想接入其它 agent？** 支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## Agent 接入（P0：让其它 agent 用上你的对话资产）
+
+Hub 提供面向 AI agent 的**只读本地检索接口**，让 Codex / Claude Code 等任何 agent
+都能低成本地查到你所有助手的历史对话——跨 agent 协作的第一步。
+
+### 方式一：MCP Server（推荐）
+
+```bash
+# Claude Code
+claude mcp add conversation-hub -- python /path/to/hub_agent.py mcp
+```
+
+暴露 5 个工具：`hub_ping` / `hub_search`（跨 agent 布尔检索）/
+`hub_conversation`（分级读取：summary 便宜、full 带字符预算）/ `hub_daily` / `hub_projects`。
+
+### 方式二：CLI（任何能跑 shell 的 agent）
+
+```bash
+python hub_agent.py search "修复VPN" --days 7 --limit 5
+python hub_agent.py show <source> <conversation_id> --level full --budget 8000
+python hub_agent.py daily --date 2026-08-08
+python hub_agent.py projects
+```
+
+### 方式三：HTTP API
+
+`/agent/search` · `/agent/conversation/{source}/{id}?level=summary|full&budget=N` ·
+`/agent/daily` · `/agent/projects` —— 与 Web 服务同端口，仅 `127.0.0.1`。
+
+**成本设计（分级检索）**：L1 索引级元数据（标题/时间/摘要，几乎零成本）→
+L2 摘要级（对话概览，便宜）→ L3 全文级（`budget` 参数控制字符预算，按需）。
+agent 90% 的查询在前两层就能解决。纯 Python 标准库实现，零依赖。
+
 ## 未来方向
 
 - **网页端对话接入**（保留方向，暂未内置）：ChatGPT / 千问 / Gemini / Claude 网页版等的
