@@ -171,6 +171,7 @@ const defaultFilters = () => ({
   nativeProject: "all",
   favorites: false,
   query: "",
+  tag: "",
 });
 
 const state = {
@@ -549,13 +550,22 @@ function showToast(message) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const send = async () => fetch(path, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json", "X-Hub-Token": state.token } : {}),
       ...(options.headers || {}),
     },
   });
+  let response = await send();
+  if (response.status === 403 && options.body) {
+    // 令牌可能因服务重启而失效：刷新后重试一次
+    try {
+      const refreshed = await fetch("/api/token");
+      if (refreshed.ok) state.token = (await refreshed.json()).token;
+    } catch {}
+    response = await send();
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `请求失败 ${response.status}`);
   return data;
@@ -646,6 +656,18 @@ function renderWorkspaceSummary() {
     state.nativeProject = "all";
     state.filters[state.source].nativeProject = "all";
   }
+  const tagSelect = $("#tagFilter");
+  if (tagSelect) {
+    const tagRows = data.tags || [];
+    tagSelect.innerHTML = `<option value="">全部标签</option>` +
+      tagRows.map(([name, count]) =>
+        `<option value="${escapeHtml(name)}">${escapeHtml(name)} · ${count}</option>`
+      ).join("");
+    tagSelect.value = [...tagSelect.options].some((option) => option.value === state.tag)
+      ? state.tag
+      : "";
+    if (tagSelect.value !== state.tag) state.tag = "";
+  }
 
   document.querySelectorAll("#quickRanges [data-range]").forEach((button) => {
     const value = button.dataset.range;
@@ -665,6 +687,7 @@ function queryString() {
     workspace: state.workspace,
     native_project: state.nativeProject,
     favorites: state.favorites ? "1" : "0",
+    tag: state.tag,
     q: state.query,
     offset: String(state.offset),
     limit: String(state.limit),
@@ -681,6 +704,7 @@ function syncUrl() {
   if (state.workspace !== "all") params.set("workspace", state.workspace);
   if (state.nativeProject !== "all") params.set("nativeProject", state.nativeProject);
   if (state.favorites) params.set("favorites", "1");
+  if (state.tag) params.set("tag", state.tag);
   if (state.query) params.set("q", state.query);
   if (state.dailyDate !== localDateIso()) params.set("reviewDate", state.dailyDate);
   if (state.selectedProjectId) params.set("project", state.selectedProjectId);
@@ -705,6 +729,7 @@ function readUrlState() {
   state.workspace = params.get("workspace") || "all";
   state.nativeProject = params.get("nativeProject") || "all";
   state.favorites = params.get("favorites") === "1";
+  state.tag = params.get("tag") || "";
   state.query = (params.get("q") || "").trim();
   const reviewDate = params.get("reviewDate");
   if (/^\d{4}-\d{2}-\d{2}$/.test(reviewDate || "")) state.dailyDate = reviewDate;
@@ -1198,6 +1223,7 @@ function currentFilters() {
     nativeProject: state.nativeProject,
     favorites: state.favorites,
     query: state.query,
+    tag: state.tag,
   };
 }
 
@@ -1216,6 +1242,7 @@ function syncControls() {
   $("#searchInput").value = state.query;
   $("#workspaceFilter").value = state.workspace;
   $("#nativeProjectFilter").value = state.nativeProject;
+  $("#tagFilter").value = state.tag;
   renderWorkspaceHeading();
   renderWorkspaceSummary();
 }
@@ -1824,19 +1851,21 @@ function renderDetail(data) {
 }
 
 async function saveDetail(root, item, quiet) {
+  const noteInput = root.querySelector(".note-input");
+  const tagsInput = root.querySelector(".tags-input");
+  const statusSelect = root.querySelector(".user-status");
   const payload = {
     source: item.source,
     id: item.id,
-    note: root.querySelector(".note-input").value,
-    tags: root.querySelector(".tags-input").value
-      .split(/[,，]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean),
-    user_status: root.querySelector(".user-status").value,
+    note: noteInput ? noteInput.value : (item.note || ""),
+    tags: tagsInput
+      ? tagsInput.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean)
+      : (item.tags || []),
+    user_status: statusSelect ? statusSelect.value : (item.user_status || ""),
     favorite: item.favorite,
   };
   const saveState = root.querySelector(".save-state");
-  saveState.textContent = "保存中…";
+  if (saveState) saveState.textContent = "保存中…";
   try {
     await api("/api/note", { method: "POST", body: JSON.stringify(payload) });
     saveState.textContent = "已保存";
@@ -1847,8 +1876,8 @@ async function saveDetail(root, item, quiet) {
     loadSummary();
     if (!quiet) showToast("备注和状态已保存");
   } catch (error) {
-    saveState.textContent = "保存失败";
-    showToast(error.message);
+    if (saveState) saveState.textContent = "保存失败";
+    showToast(`保存失败：${error.message}（可刷新页面后重试）`);
   }
 }
 
@@ -2514,6 +2543,11 @@ $("#workspaceFilter").addEventListener("change", (event) => {
 
 $("#nativeProjectFilter").addEventListener("change", (event) => {
   state.nativeProject = event.target.value;
+  resetAndLoad();
+});
+
+$("#tagFilter").addEventListener("change", (event) => {
+  state.tag = event.target.value;
   resetAndLoad();
 });
 

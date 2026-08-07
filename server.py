@@ -2437,6 +2437,7 @@ class ConversationIndex:
         workspace: str,
         native_project: str,
         favorites: bool,
+        tag: str,
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
@@ -2472,6 +2473,8 @@ class ConversationIndex:
             ):
                 continue
             if favorites and not item.favorite:
+                continue
+            if tag and tag not in (item.tags or []):
                 continue
             if query_node:
                 haystack = "\n".join(
@@ -3937,6 +3940,9 @@ class ConversationIndex:
                 source: sum(1 for item in items if item.source == source and item.favorite)
                 for source in SOURCES
             },
+            "tags": Counter(
+                tag_value for item in items for tag_value in (item.tags or [])
+            ).most_common(60),
             "workspaces": sorted(workspaces.items(), key=lambda pair: (-pair[1], pair[0])),
             "workspaces_by_source": {
                 source: sorted(values.items(), key=lambda pair: (-pair[1], pair[0]))
@@ -4368,6 +4374,7 @@ class Handler(BaseHTTPRequestHandler):
                     workspace=(params.get("workspace") or ["all"])[0],
                     native_project=(params.get("native_project") or ["all"])[0],
                     favorites=(params.get("favorites") or ["0"])[0] == "1",
+                    tag=(params.get("tag") or [""])[0],
                     limit=min(500, max(1, int((params.get("limit") or ["120"])[0]))),
                     offset=max(0, int((params.get("offset") or ["0"])[0])),
                 )
