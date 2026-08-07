@@ -196,9 +196,6 @@ const state = {
   projects: [],
   openProjectId: null,
   projectForm: { mode: "create", id: null, addAfter: false },
-  smartMode: true,
-  smartRaw: "",
-  smartInterp: null,
   filters: {
     all: defaultFilters(),
     hermes: defaultFilters(),
@@ -1216,9 +1213,7 @@ function syncControls() {
   $("#statusFilter").value = state.status;
   $("#favoriteFilter").setAttribute("aria-pressed", String(state.favorites));
   $("#favoriteFilter").textContent = state.favorites ? "★ 只看收藏" : "☆ 只看收藏";
-  $("#searchInput").value = (state.smartMode && state.smartInterp)
-    ? (state.smartRaw || "")
-    : state.query;
+  $("#searchInput").value = state.query;
   $("#workspaceFilter").value = state.workspace;
   $("#nativeProjectFilter").value = state.nativeProject;
   renderWorkspaceHeading();
@@ -2527,181 +2522,27 @@ $("#favoriteFilter").addEventListener("click", () => {
   resetAndLoad();
 });
 
-// ---- 全局搜索：自然语言 → 规范布尔检索式 ----
-
-const SMART_TIME_RULES = [
-  { re: /今\s*天|今\s*日/, range: "today" },
-  { re: /昨\s*天|昨\s*日/, range: "3d" },
-  { re: /近\s*3\s*天|最近\s*3\s*天|最近三天|近三天/, range: "3d" },
-  { re: /上\s*周|近\s*7\s*天|近一周|最近一周|最近\s*7\s*天|最近七天|这\s*周|本\s*周/, range: "7d" },
-  { re: /近\s*30\s*天|近一个月|最近一个月|最近\s*30\s*天|这\s*个\s*月|本\s*月/, range: "30d" },
-];
-
-const SMART_FILLERS = [
-  "请帮我", "帮我找", "帮我搜", "帮我查", "给我找", "给我看", "帮我", "帮忙", "给我",
-  "我想", "我要", "我需要", "找一下", "找找", "找下", "搜索一下", "搜一下", "搜索",
-  "查找", "查一下", "查下", "看看", "看下", "看一看", "有没有", "有哪些", "有什么",
-  "哪些", "哪个", "一下", "关于", "有关", "相关", "以及", "还有", "并且", "同时",
-  "所有", "全部", "对话", "记录", "内容", "东西", "事情",
-];
-
-const SMART_SINGLE_STOP = new Set([
-  "的", "了", "和", "跟", "与", "把", "将", "是", "在", "有", "个", "些", "这", "那",
-  "我", "你", "他", "她", "它", "请", "帮", "找", "搜", "查", "看", "吗", "呢", "吧",
-  "啊", "到", "给", "也", "都", "就", "还", "要", "会", "能", "需要", "可以",
-]);
-
-function looksLikeBoolean(text) {
-  return /["“”()（）]/.test(text)
-    || /(^|\s)(OR|AND|NOT)(\s|$)/i.test(text)
-    || /(^|\s)-\S/.test(text);
-}
-
-function smartQuoteTerm(term) {
-  return /^(AND|OR|NOT)$/i.test(term) ? `"${term}"` : term;
-}
-
-function interpretNaturalSearch(raw) {
-  let text = ` ${raw.trim()} `;
-  let range = "";
-  const nots = [];
-
-  for (const rule of SMART_TIME_RULES) {
-    if (rule.re.test(text)) {
-      range = rule.range;
-      text = text.replace(rule.re, " ");
-      break;
-    }
-  }
-
-  text = text.replace(/(?:不含|不包含|不包括|排除|去掉)\s*([^\s，,。;；、和与跟或]+)/g, (match, term) => {
-    const value = term.trim();
-    if (value) nots.push(value);
-    return " ";
-  });
-
-  text = text.replace(/或者|或|还是|、/g, " OR ");
-
-  const fillers = [...SMART_FILLERS].sort((a, b) => b.length - a.length);
-  for (const filler of fillers) text = text.split(filler).join(" ");
-  text = text.replace(/[，,。！!？?；;：:、“”‘’"']/g, " ");
-
-  const splitChars = "的了和跟与把将是在个些这那我你请帮吗呢吧啊到给也就还";
-  const splitRe = new RegExp(`[\\s${splitChars}]+`);
-  const tokens = text.split(splitRe).map((t) => t.trim()).filter(Boolean);
-  const kept = tokens.filter(
-    (t) => t.toUpperCase() === "OR" || !(t.length === 1 && SMART_SINGLE_STOP.has(t))
-  );
-
-  const segments = [];
-  let segment = [];
-  for (const token of kept) {
-    if (token.toUpperCase() === "OR") {
-      if (segment.length) { segments.push(segment); segment = []; }
-    } else {
-      segment.push(token);
-    }
-  }
-  if (segment.length) segments.push(segment);
-
-  let boolean;
-  if (!segments.length) {
-    boolean = "";
-  } else if (segments.length === 1) {
-    boolean = segments[0].map(smartQuoteTerm).join(" ");
-  } else {
-    boolean = segments
-      .map((seg) => (seg.length > 1 ? `(${seg.map(smartQuoteTerm).join(" ")})` : smartQuoteTerm(seg[0])))
-      .join(" OR ");
-  }
-  for (const n of nots) {
-    boolean = `${boolean ? `${boolean} ` : ""}NOT ${smartQuoteTerm(n)}`;
-  }
-
-  const changed = Boolean(boolean) && (
-    boolean.toLowerCase() !== raw.trim().toLowerCase() || Boolean(range) || nots.length > 0
-  );
-  return { boolean, range, nots, changed };
-}
-
-function applySmartSearch(rawValue) {
-  const raw = rawValue.trim();
-  state.smartRaw = raw;
-  if (state.smartMode && raw && !looksLikeBoolean(raw)) {
-    const interp = interpretNaturalSearch(raw);
-    state.smartInterp = interp;
-    state.query = interp.boolean || raw;
-    // 仅当自然语言带时间词才改范围；否则保留用户手动选的范围，避免抹掉显式选择
-    if (interp.range && VALID_RANGES.has(interp.range)) state.range = interp.range;
-  } else {
-    state.smartInterp = null;
-    state.query = raw;
-  }
-  renderSmartSearchBar();
+// ---- 全局搜索 ----
+function applySearch(rawValue) {
+  state.query = rawValue.trim();
   resetAndLoad();
 }
-
-function renderSmartSearchBar() {
-  const bar = $("#smartSearchBar");
-  if (!bar) return;
-  const interp = state.smartInterp;
-  if (!state.smartMode || !interp || !interp.changed) {
-    bar.hidden = true;
-    bar.innerHTML = "";
-    return;
-  }
-  bar.hidden = false;
-  bar.innerHTML = `
-    <span class="smart-bar-label">已理解为</span>
-    <code class="smart-bar-query">${escapeHtml(interp.boolean)}</code>
-    ${interp.range ? `<span class="smart-bar-range">时间：${escapeHtml(rangeLabel(interp.range))}</span>` : ""}
-    <span class="smart-bar-actions">
-      <button id="smartEditButton" class="button ghost" type="button">编辑检索式</button>
-    </span>
-  `;
-  $("#smartEditButton").addEventListener("click", () => {
-    state.smartMode = false;
-    updateSmartToggleButton();
-    state.query = interp.boolean;
-    state.smartInterp = null;
-    $("#searchInput").value = interp.boolean;
-    renderSmartSearchBar();
-    resetAndLoad();
-  });
-}
-
-function updateSmartToggleButton() {
-  const button = $("#smartSearchToggle");
-  if (!button) return;
-  button.classList.toggle("active", state.smartMode);
-  button.setAttribute("aria-pressed", String(state.smartMode));
-  button.title = state.smartMode ? "智能解析已开启：自然语言自动转布尔检索" : "智能解析已关闭：按原文检索";
-}
-
-$("#smartSearchToggle")?.addEventListener("click", () => {
-  state.smartMode = !state.smartMode;
-  updateSmartToggleButton();
-  applySmartSearch($("#searchInput").value);
-});
 
 $("#searchInput").addEventListener("input", (event) => {
   event.target.removeAttribute("aria-invalid");
   clearTimeout(searchTimer);
   const value = event.target.value;
-  searchTimer = setTimeout(() => applySmartSearch(value), 380);
+  searchTimer = setTimeout(() => applySearch(value), 380);
 });
 $("#searchInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     clearTimeout(searchTimer);
-    applySmartSearch(event.currentTarget.value);
+    applySearch(event.currentTarget.value);
   }
   if (event.key === "Escape" && event.currentTarget.value) {
     clearTimeout(searchTimer);
     event.currentTarget.value = "";
     state.query = "";
-    state.smartRaw = "";
-    state.smartInterp = null;
-    renderSmartSearchBar();
     resetAndLoad();
   }
 });
@@ -2903,7 +2744,6 @@ async function boot() {
     try { savedTheme = localStorage.getItem(THEME_KEY) || ""; } catch {}
     applyTheme(THEMES[savedTheme] ? savedTheme : currentTheme(), { persist: false });
     initSidebarCollapse();
-    updateSmartToggleButton();
     setDetailOpen(false);
     initDetailResizer();
     initSourceDetails();

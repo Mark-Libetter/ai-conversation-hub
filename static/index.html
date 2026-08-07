@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-        <link rel="stylesheet" href="/app.css?v=lite23">
+        <link rel="stylesheet" href="/app.css?v=lite24">
   </head>
   <body>
     <div class="app-frame">
@@ -86,8 +86,7 @@
               <option value="zcode">ZCode</option>
               <option value="hermes">Hermes</option>
             </select>
-            <input id="searchInput" type="search" placeholder='自然语言直接搜；也可写 "短语"、OR、NOT、括号'>
-            <button id="smartSearchToggle" class="smart-search-toggle active" type="button" aria-pressed="true" title="智能解析已开启：自然语言自动转布尔检索">智能</button>
+            <input id="searchInput" type="search" placeholder="搜索对话，支持 OR / NOT / &quot;短语&quot;">
             <details class="search-syntax">
               <summary aria-label="搜索语法帮助">语法</summary>
               <div>
@@ -108,7 +107,6 @@
           </div>
         </header>
 
-        <div id="smartSearchBar" class="smart-search-bar" hidden aria-live="polite"></div>
 
         <section id="findView" class="app-view active" aria-label="找对话">
           <div class="find-layout">
@@ -500,6 +498,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite20" defer></script>
+    <script src="/app.js?v=lite23" defer></script>
   </body>
 </html>
