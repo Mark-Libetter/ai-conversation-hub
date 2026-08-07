@@ -32,6 +32,10 @@ const THEMES = {
   "warm-paper": { name: "温暖纸张", mode: "light" },
   terminal: { name: "终端黑客", mode: "dark" },
   archive: { name: "档案纸张", mode: "light" },
+  qingci: { name: "青花瓷", mode: "light" },
+  shuimo: { name: "水墨黑白", mode: "light" },
+  senlin: { name: "松烟森林", mode: "dark" },
+  luoxia: { name: "落霞暖橙", mode: "dark" },
 };
 const SOURCE_LABELS = {
   hermes: "Hermes",

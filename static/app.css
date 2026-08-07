@@ -2421,6 +2421,10 @@ body.resizing-project-columns { cursor: col-resize; user-select: none; }
 .theme-preview.warm-paper { background: linear-gradient(145deg,#f4ead8,#c98c69); }
 .theme-preview.terminal { background: linear-gradient(145deg,#030b07,#0c3824); }
 .theme-preview.archive { background: linear-gradient(145deg,#eee9df,#b7d0c8); }
+.theme-preview.qingci { background: linear-gradient(145deg,#f2f7f9,#8fb7c9 75%,#2f6f8f); }
+.theme-preview.shuimo { background: linear-gradient(145deg,#fbfbf8,#c9c9c2 60%,#1c1c1a); }
+.theme-preview.senlin { background: linear-gradient(145deg,#0c1712,#1f4632 65%,#7ccf9f); }
+.theme-preview.luoxia { background: linear-gradient(145deg,#1d1220,#a34a5e 60%,#ff9d6c); }
 .theme-dialog-footer {
   display: flex;
   justify-content: space-between;
@@ -2558,6 +2562,119 @@ html[data-theme="terminal"] .workspace-topbar { background: rgba(3,8,6,.96); }
 html[data-theme="archive"] { color-scheme: light; }
 html[data-theme="archive"] .primary-sidebar { background: #eee9df; }
 html[data-theme="archive"] .workspace-topbar { background: rgba(245,241,232,.96); }
+
+html[data-theme="qingci"] {
+  color-scheme: light;
+  --paper: #edf2f4;
+  --paper-2: #f8fbfc;
+  --ink: #1c3a52;
+  --ink-2: #3d5a72;
+  --muted: #7e93a3;
+  --line: #d2dee4;
+  --line-dark: #b9cbd5;
+  --teal-soft: #d7e6ec;
+  --teal-pale: #e8f1f4;
+  --codex: #2f6f8f;
+  --hermes: #b26a4a;
+  --workbuddy: #7a6aa6;
+  --danger: #b05548;
+  --accent: #2f6f8f;
+  --surface: #f8fbfc;
+}
+html[data-theme="qingci"] body {
+  background:
+    radial-gradient(circle at 85% 0%,rgba(47,111,143,.07),transparent 36%),
+    linear-gradient(rgba(28,58,82,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(28,58,82,.015) 1px,transparent 1px),
+    #edf2f4;
+  background-size: auto, 26px 26px, 26px 26px, auto;
+}
+html[data-theme="qingci"] .primary-sidebar { background: #e2eaee; }
+html[data-theme="qingci"] .workspace-topbar { background: rgba(237,242,244,.95); }
+
+html[data-theme="shuimo"] {
+  color-scheme: light;
+  --paper: #f5f5f2;
+  --paper-2: #fdfdfb;
+  --ink: #1c1c1a;
+  --ink-2: #40403c;
+  --muted: #8f8f88;
+  --line: #deded8;
+  --line-dark: #c6c6be;
+  --teal-soft: #e9e9e4;
+  --teal-pale: #f2f2ee;
+  --codex: #33332f;
+  --hermes: #8a7360;
+  --workbuddy: #6e6e68;
+  --danger: #9d4a44;
+  --accent: #262624;
+  --surface: #fdfdfb;
+}
+html[data-theme="shuimo"] body {
+  background:
+    radial-gradient(circle at 12% 8%,rgba(28,28,26,.05),transparent 30%),
+    radial-gradient(circle at 92% 92%,rgba(28,28,26,.06),transparent 34%),
+    #f5f5f2;
+}
+html[data-theme="shuimo"] .primary-sidebar { background: #ecece7; }
+html[data-theme="shuimo"] .workspace-topbar { background: rgba(245,245,242,.95); }
+
+html[data-theme="senlin"] {
+  color-scheme: dark;
+  --paper: #0d1712;
+  --paper-2: #16241c;
+  --ink: #e7f0e3;
+  --ink-2: #bfd2b8;
+  --muted: #7e9478;
+  --line: #24382b;
+  --line-dark: #35513f;
+  --teal-soft: #1d3627;
+  --teal-pale: #15291e;
+  --codex: #6cc29a;
+  --hermes: #d69a66;
+  --workbuddy: #a9a1d6;
+  --danger: #e08074;
+  --accent: #7ccf9f;
+  --surface: #16241c;
+}
+html[data-theme="senlin"] body {
+  background:
+    radial-gradient(circle at 80% -5%,rgba(124,207,159,.14),transparent 34%),
+    radial-gradient(circle at 10% 100%,rgba(38,92,62,.35),transparent 42%),
+    linear-gradient(160deg,#0a120e,#101d15 60%,#0d1712);
+  background-attachment: fixed;
+}
+html[data-theme="senlin"] .primary-sidebar,
+html[data-theme="senlin"] .workspace-topbar { background: rgba(13,23,18,.94); }
+
+html[data-theme="luoxia"] {
+  color-scheme: dark;
+  --paper: #191019;
+  --paper-2: #241823;
+  --ink: #f7e9df;
+  --ink-2: #dcc0b0;
+  --muted: #a08172;
+  --line: #3c2836;
+  --line-dark: #55374b;
+  --teal-soft: #3d2434;
+  --teal-pale: #2c1b27;
+  --codex: #5cb8bd;
+  --hermes: #ff9d6c;
+  --workbuddy: #c39ad6;
+  --danger: #e87d6d;
+  --accent: #ffab76;
+  --surface: #241823;
+}
+html[data-theme="luoxia"] body {
+  background:
+    radial-gradient(circle at 85% 110%,rgba(255,140,84,.22),transparent 42%),
+    radial-gradient(circle at 15% -10%,rgba(196,98,148,.18),transparent 38%),
+    linear-gradient(150deg,#140d15,#241423 55%,#1b1220);
+  background-attachment: fixed;
+}
+html[data-theme="luoxia"] .primary-sidebar,
+html[data-theme="luoxia"] .workspace-topbar { background: rgba(25,16,25,.94); }
+
 
 html[data-theme]:not([data-theme="archive"]) .primary-nav-item:hover,
 html[data-theme]:not([data-theme="archive"]) .primary-nav-item.active,
