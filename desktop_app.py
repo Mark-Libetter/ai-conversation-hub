@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import argparse
 import json
 import socket
-import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 import webbrowser
-from pathlib import Path
 
 from app_paths import DATA_DIR
 
@@ -54,32 +52,23 @@ def available_port() -> int:
         return int(probe.getsockname()[1])
 
 
-def server_command(port: int) -> list[str]:
-    if getattr(sys, "frozen", False):
-        return [sys.executable, "--serve", "--port", str(port)]
-    return [sys.executable, str(Path(__file__).resolve()), "--serve", "--port", str(port)]
-
-
-def start_server(port: int) -> None:
-    kwargs = {
-        "cwd": str(DATA_DIR),
-        "close_fds": True,
-    }
-    if sys.platform == "win32":
-        kwargs["creationflags"] = (
-            getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
-        )
-    else:
-        kwargs["start_new_session"] = True
-    subprocess.Popen(server_command(port), **kwargs)
-
-
 def launch() -> None:
+    from server import run_server
+
     port = remembered_port()
+    server_thread = None
+
     if not port or not health(port):
         port = available_port()
-        start_server(port)
+
+        # 线程内启动 server，不再 spawn 子进程（避免防火墙拦跨进程 TCP）
+        server_thread = threading.Thread(
+            target=run_server, args=(port,), kwargs={"open_browser": False},
+            daemon=True,
+        )
+        server_thread.start()
+
+        # 等待 server 就绪（进程内 loopback 不被防火墙拦）
         for _ in range(60):
             if health(port):
                 break
@@ -92,28 +81,27 @@ def launch() -> None:
         )
     webbrowser.open(f"http://127.0.0.1:{port}/")
 
+    # 保持主进程存活（server 线程是 daemon，主进程退出则全部停止）
+    if server_thread and server_thread.is_alive():
+        try:
+            server_thread.join()
+        except KeyboardInterrupt:
+            pass
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--serve", action="store_true")
-    parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
-    if args.serve:
-        from server import run_server
-        run_server(args.port, open_browser=False)
-    else:
+    try:
+        launch()
+    except Exception as exc:  # 让双击失败时窗口停住、能看到原因
+        print(f"\n启动失败：{exc}")
+        print("排查提示：")
+        print("  1. 请先把整个文件夹从压缩包完整解压，再运行 AIConversationHub.exe；")
+        print("  2. 若被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任；")
+        print("  3. 确认 _internal 文件夹与 AIConversationHub.exe 在同一目录。")
         try:
-            launch()
-        except Exception as exc:  # 让双击失败时窗口停住、能看到原因
-            print(f"\n启动失败：{exc}")
-            print("排查提示：")
-            print("  1. 请先把整个文件夹从压缩包完整解压，再运行 AIConversationHub.exe；")
-            print("  2. 若被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任；")
-            print("  3. 确认 _internal 文件夹与 AIConversationHub.exe 在同一目录。")
-            try:
-                input("\n按回车键退出…")
-            except (EOFError, KeyboardInterrupt):
-                pass
+            input("\n按回车键退出…")
+        except (EOFError, KeyboardInterrupt):
+            pass
 
 
 if __name__ == "__main__":
