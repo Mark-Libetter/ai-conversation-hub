@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -52,6 +54,43 @@ def available_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def ensure_firewall_allowed() -> None:
+    """首次运行时添加 Windows 防火墙入站规则（仅 Windows，仅首次弹 UAC）。"""
+    if sys.platform != "win32":
+        return
+    exe = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+    rule_name = "AIConversationHub (Inbound)"
+    # 检查规则是否已存在（不需要管理员权限）
+    try:
+        check = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"],
+            capture_output=True, text=True, creationflags=0x08000000,  # CREATE_NO_WINDOW
+        )
+        if check.returncode == 0 and rule_name in (check.stdout or ""):
+            return  # 规则已存在，跳过
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # 需要添加规则：用 VBScript 中介提权（弹 UAC，避免黑窗）
+    vbs = (
+        'Set s=CreateObject("Shell.Application")\n'
+        f's.ShellExecute "netsh","advfirewall firewall add rule name=\"{rule_name}\" '
+        f'dir=in action=allow program=\"{exe}\" enable=yes profile=any","","runas",0\n'
+    )
+    vbs_path = os.path.join(os.environ.get("TEMP", "."), "_hub_firewall.vbs")
+    try:
+        with open(vbs_path, "w", encoding="utf-8") as f:
+            f.write(vbs)
+        subprocess.run(["wscript", vbs_path], capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        pass
+    finally:
+        try:
+            os.remove(vbs_path)
+        except OSError:
+            pass
+    time.sleep(2)
+
+
 def launch() -> None:
     from server import run_server
 
@@ -59,6 +98,7 @@ def launch() -> None:
     server_thread = None
 
     if not port or not health(port):
+        ensure_firewall_allowed()
         port = available_port()
 
         # 线程内启动 server，不再 spawn 子进程（避免防火墙拦跨进程 TCP）
