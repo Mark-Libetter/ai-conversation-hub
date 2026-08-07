@@ -2687,7 +2687,12 @@ html[data-theme="archive"] .global-search select:focus,
 html[data-theme="archive"] .global-search input:focus { box-shadow: none; }
 
 /* ---- 时间快筛胶囊化 ---- */
-html[data-theme="archive"] .quick-ranges { gap: 6px; }
+html[data-theme="archive"] .quick-ranges {
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 html[data-theme="archive"] .quick-range {
   border: 1px solid var(--line);
   border-radius: 999px;
