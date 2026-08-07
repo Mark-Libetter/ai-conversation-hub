@@ -2221,15 +2221,20 @@ function renderProjectList() {
     list.innerHTML = `<div class="empty-detail"><div><h2>还没有项目</h2><p>在「找对话」里勾选几个对话，点「归入项目」；或点「新建项目」。</p></div></div>`;
     return;
   }
-  list.innerHTML = state.projects.map((p) => `
+  const stLabels = { active: "进行中", done: "已完成", paused: "暂停" };
+  const stClass = { active: "st-active", done: "st-done", paused: "st-paused" };
+  list.innerHTML = state.projects.map((p) => {
+    const st = p.status || "active";
+    return `
     <button class="project-card" type="button" data-project="${escapeHtml(p.id)}">
       <span class="project-card-head">
         <strong>${escapeHtml(p.name)}</strong>
-        <span class="chip">${p.count} 个对话</span>
+        <span class="proj-status-pill ${stClass[st]}">${stLabels[st]}</span>
       </span>
       <span class="project-desc">${escapeHtml(p.description || "暂无说明")}</span>
-      <span class="muted">更新于 ${relativeTime(p.updated_at)}</span>
-    </button>`).join("");
+      <span class="muted">${p.count} 个对话 · 更新于 ${relativeTime(p.updated_at)}</span>
+    </button>`;
+  }).join("");
 }
 
 async function openProject(id) {
@@ -2244,7 +2249,14 @@ function renderProjectDetail(p) {
   list.hidden = true;
   detail.hidden = false;
   $("#backToProjectsButton").hidden = false;
+  state.openProjectId = p.id;
   const items = p.items || [];
+  const tasks = p.tasks || [];
+  const statusLabels = { active: "进行中", done: "已完成", paused: "暂停" };
+  const statusClass = { active: "st-active", done: "st-done", paused: "st-paused" };
+  const st = p.status || "active";
+  const nextSt = st === "active" ? "done" : st === "done" ? "paused" : "active";
+
   detail.innerHTML = `
     <div class="project-detail-head">
       <div>
@@ -2252,19 +2264,94 @@ function renderProjectDetail(p) {
         <p class="muted">${escapeHtml(p.description || "暂无说明")}</p>
       </div>
       <span class="project-detail-actions">
+        <button class="proj-status-pill ${statusClass[st]}" type="button" data-cycle-status="${escapeHtml(p.id)}" title="点击切换状态">${statusLabels[st]}</button>
         <button class="button ghost" type="button" data-edit-project="${escapeHtml(p.id)}">编辑</button>
-        <button class="button ghost" type="button" data-delete-project="${escapeHtml(p.id)}">删除项目</button>
+        <button class="button ghost" type="button" data-delete-project="${escapeHtml(p.id)}">删除</button>
       </span>
     </div>
-    ${items.length ? items.map((it) => `
-      <div class="project-item${it.present ? "" : " missing"}">
-        <span class="source-dot ${escapeHtml(it.source)}"></span>
-        <button class="project-item-main" type="button" ${it.present ? `data-open-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}"` : "disabled"}>
-          <strong>${escapeHtml(it.title)}</strong>
-          <small class="muted">${escapeHtml(conversationSourceLabel({ source: it.source }))} · ${it.message_count} 条 · ${it.updated_at ? relativeTime(it.updated_at) : ""}</small>
-        </button>
-        <button class="button ghost" type="button" data-remove-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}">移除</button>
-      </div>`).join("") : `<div class="empty-detail"><div><h2>这个项目还是空的</h2><p>回「找对话」勾选对话后点「归入项目」。</p></div></div>`}`;
+
+    <section class="proj-section">
+      <h4 class="proj-section-title">📝 项目笔记</h4>
+      <textarea id="projectNoteArea" class="proj-note-area" rows="5" placeholder="记录关键结论、决策、反思…">${escapeHtml(p.note || "")}</textarea>
+      <button class="button secondary proj-note-save" type="button" data-save-note="${escapeHtml(p.id)}">保存笔记</button>
+    </section>
+
+    <section class="proj-section">
+      <h4 class="proj-section-title">✓ 任务清单 <small class="muted">(${tasks.filter(t => !t.done).length} 待办)</small></h4>
+      <div class="proj-tasks">
+        ${tasks.length ? tasks.map((t) => `
+          <div class="proj-task${t.done ? " done" : ""}">
+            <label><input type="checkbox" data-toggle-task="${escapeHtml(t.id)}" ${t.done ? "checked" : ""}><span>${escapeHtml(t.title)}</span></label>
+            <button class="proj-task-del" type="button" data-del-task="${escapeHtml(t.id)}" title="删除">×</button>
+          </div>`).join("") : `<p class="muted proj-empty-hint">暂无任务</p>`}
+      </div>
+      <div class="proj-task-add">
+        <input id="projTaskInput" type="text" placeholder="添加任务后回车…" maxlength="200">
+        <button class="button ghost" type="button" data-add-task="${escapeHtml(p.id)}">＋</button>
+      </div>
+    </section>
+
+    <section class="proj-section">
+      <h4 class="proj-section-title">💬 对话 (${items.length})</h4>
+      ${items.length ? items.map((it) => `
+        <div class="project-item${it.present ? "" : " missing"}">
+          <span class="source-dot ${escapeHtml(it.source)}"></span>
+          <div class="project-item-body">
+            <div class="project-item-row">
+              <button class="project-item-main" type="button" ${it.present ? `data-open-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}"` : "disabled"}>
+                <strong>${escapeHtml(it.title)}</strong>
+                <small class="muted">${escapeHtml(conversationSourceLabel({ source: it.source }))} · ${it.message_count} 条 · ${it.updated_at ? relativeTime(it.updated_at) : ""}</small>
+              </button>
+              <button class="button ghost" type="button" data-remove-conv="${escapeHtml(it.source)}|${escapeHtml(it.id)}">移除</button>
+            </div>
+            <input class="proj-item-note" type="text" placeholder="${escapeHtml(it.note ? "" : "加标注：为什么重要…")}"
+              value="${escapeHtml(it.note || "")}"
+              data-annotate="${escapeHtml(it.source)}|${escapeHtml(it.id)}">
+          </div>
+        </div>`).join("") : `<div class="empty-detail"><div><h2>这个项目还是空的</h2><p>回「找对话」勾选对话后点「归入项目」。</p></div></div>`}
+    </section>`;
+
+  // 笔记保存按钮
+  detail.querySelector("[data-save-note]")?.addEventListener("click", async () => {
+    const body = $("#projectNoteArea").value;
+    await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "save_note", id: p.id, body }) });
+    showToast("笔记已保存");
+  });
+  // 状态切换
+  detail.querySelector("[data-cycle-status]")?.addEventListener("click", async () => {
+    await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "set_status", id: p.id, status: nextSt }) });
+    openProject(p.id);
+  });
+  // 添加任务
+  const addTask = async () => {
+    const title = $("#projTaskInput").value.trim();
+    if (!title) return;
+    await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "add_task", id: p.id, title }) });
+    openProject(p.id);
+  };
+  detail.querySelector("[data-add-task]")?.addEventListener("click", addTask);
+  $("#projTaskInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask(); } });
+  // 任务勾选/删除
+  detail.querySelectorAll("[data-toggle-task]").forEach((cb) => {
+    cb.addEventListener("change", async () => {
+      await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "toggle_task", id: p.id, task_id: cb.dataset.toggleTask }) });
+      openProject(p.id);
+    });
+  });
+  detail.querySelectorAll("[data-del-task]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "delete_task", id: p.id, task_id: btn.dataset.delTask }) });
+      openProject(p.id);
+    });
+  });
+  // 对话标注（失焦时保存）
+  detail.querySelectorAll("[data-annotate]").forEach((inp) => {
+    inp.addEventListener("change", async () => {
+      const [source, cid] = inp.dataset.annotate.split("|");
+      await api("/api/projects", { method: "POST", body: JSON.stringify({ action: "annotate_item", id: p.id, source, conversation_id: cid, note: inp.value }) });
+      showToast("标注已保存");
+    });
+  });
 }
 
 function checkedConversations() {

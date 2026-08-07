@@ -798,10 +798,40 @@ def _ensure_projects(conn: sqlite3.Connection) -> None:
           source TEXT NOT NULL,
           conversation_id TEXT NOT NULL,
           added_at REAL NOT NULL DEFAULT 0,
+          note TEXT NOT NULL DEFAULT '',
           PRIMARY KEY (project_id, source, conversation_id)
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_project_notes (
+          project_id TEXT PRIMARY KEY,
+          body TEXT NOT NULL DEFAULT '',
+          updated_at REAL NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_project_tasks (
+          project_id TEXT NOT NULL,
+          id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          done INTEGER NOT NULL DEFAULT 0,
+          created_at REAL NOT NULL DEFAULT 0,
+          position INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (project_id, id)
+        )
+        """
+    )
+    # 兼容旧表：补 status / note 列
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(user_projects)")}
+    if "status" not in cols:
+        conn.execute("ALTER TABLE user_projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    item_cols = {row["name"] for row in conn.execute("PRAGMA table_info(user_project_items)")}
+    if "note" not in item_cols:
+        conn.execute("ALTER TABLE user_project_items ADD COLUMN note TEXT NOT NULL DEFAULT ''")
 
 
 def projects_list() -> list[dict[str, Any]]:
@@ -826,8 +856,16 @@ def project_detail(project_id: str) -> dict[str, Any]:
         if not proj:
             raise ValueError("项目不存在")
         items = conn.execute(
-            "SELECT source, conversation_id, added_at FROM user_project_items "
+            "SELECT source, conversation_id, added_at, note FROM user_project_items "
             "WHERE project_id=? ORDER BY added_at DESC",
+            (project_id,),
+        ).fetchall()
+        note_row = conn.execute(
+            "SELECT body FROM user_project_notes WHERE project_id=?", (project_id,)
+        ).fetchone()
+        tasks = conn.execute(
+            "SELECT id, title, done, created_at, position FROM user_project_tasks "
+            "WHERE project_id=? ORDER BY position, created_at",
             (project_id,),
         ).fetchall()
     members = []
@@ -838,6 +876,7 @@ def project_detail(project_id: str) -> dict[str, Any]:
                 "source": item["source"],
                 "id": item["conversation_id"],
                 "added_at": item["added_at"],
+                "note": item["note"] or "",
                 "present": bool(conv),
                 "title": conv.title if conv else "（已不在索引）",
                 "updated_at": conv.updated_at if conv else 0,
@@ -845,7 +884,12 @@ def project_detail(project_id: str) -> dict[str, Any]:
                 "message_count": conv.message_count if conv else 0,
             }
         )
-    return {**dict(proj), "items": members}
+    return {
+        **dict(proj),
+        "items": members,
+        "note": note_row["body"] if note_row else "",
+        "tasks": [dict(t) for t in tasks],
+    }
 
 
 def projects_mutate(payload: dict[str, Any]) -> dict[str, Any]:
@@ -905,6 +949,74 @@ def projects_mutate(payload: dict[str, Any]) -> dict[str, Any]:
                     )
             conn.execute(
                 "UPDATE user_projects SET updated_at=? WHERE id=?", (now, project_id)
+            )
+        elif action == "set_status":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            status = clean_text(payload.get("status"), 20) or "active"
+            if status not in ("active", "done", "paused"):
+                raise ValueError("无效状态")
+            conn.execute(
+                "UPDATE user_projects SET status=?, updated_at=? WHERE id=?",
+                (status, now, project_id),
+            )
+        elif action == "save_note":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            body = clean_text(payload.get("body"), 20000)
+            conn.execute(
+                "INSERT INTO user_project_notes(project_id, body, updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(project_id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at",
+                (project_id, body, now),
+            )
+            conn.execute(
+                "UPDATE user_projects SET updated_at=? WHERE id=?", (now, project_id)
+            )
+        elif action == "add_task":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            title = clean_text(payload.get("title"), 200)
+            if not title:
+                raise ValueError("任务需要标题")
+            task_id = secrets.token_urlsafe(8)
+            pos = (conn.execute(
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM user_project_tasks WHERE project_id=?",
+                (project_id,)
+            ).fetchone()[0])
+            conn.execute(
+                "INSERT INTO user_project_tasks(project_id, id, title, done, created_at, position) "
+                "VALUES(?,?,?,?,?,?)",
+                (project_id, task_id, title, 0, now, pos),
+            )
+            conn.execute(
+                "UPDATE user_projects SET updated_at=? WHERE id=?", (now, project_id)
+            )
+        elif action == "toggle_task":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            task_id = clean_text(payload.get("task_id"), 64)
+            conn.execute(
+                "UPDATE user_project_tasks SET done = CASE done WHEN 0 THEN 1 ELSE 0 END "
+                "WHERE project_id=? AND id=?",
+                (project_id, task_id),
+            )
+        elif action == "delete_task":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            task_id = clean_text(payload.get("task_id"), 64)
+            conn.execute(
+                "DELETE FROM user_project_tasks WHERE project_id=? AND id=?",
+                (project_id, task_id),
+            )
+        elif action == "annotate_item":
+            if not project_id:
+                raise ValueError("缺少项目 id")
+            source = clean_text(payload.get("source"), 40)
+            conversation_id = clean_text(payload.get("conversation_id"), 200)
+            note = clean_text(payload.get("note"), 500)
+            conn.execute(
+                "UPDATE user_project_items SET note=? WHERE project_id=? AND source=? AND conversation_id=?",
+                (note, project_id, source, conversation_id),
             )
         else:
             raise ValueError("不支持的项目操作")
