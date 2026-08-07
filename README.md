@@ -3,13 +3,21 @@
 > 把多个 AI 编程助手的对话只读汇聚成一条可搜索的时间线，帮你找回记忆、复盘工作。
 > 本地运行、零第三方依赖、对原始数据只读。
 
+> **English**: AI Conversation Hub is a **local-first** dashboard that aggregates
+> **chat history from multiple AI coding agents** (Codex CLI, Claude Code, Hermes,
+> ZCode, QoderWork, WorkBuddy) into one searchable timeline: **cross-agent boolean
+> search**, fact-based **daily review**, project grouping, tags, favorites and
+> Markdown / JSONL **export**. Pure Python standard library, zero dependencies,
+> binds only to `127.0.0.1`, read-only access to your original conversation data.
+
 ## 这是什么
 
 如果你同时用 Codex、Hermes、WorkBuddy、QoderWork、Claude Code、ZCode 等 AI 编程助手，对话散落在各家，找一个"之前在哪聊过这个"很痛苦。这个工具把它们汇聚到一个本地界面，让你：
 
-- **跨源搜索**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号）
-- **每日回顾**：自动生成当天的工作日报（规则版，离线可用，不调模型）
-- **对话详情**：看完整对话内容，加收藏、标签、备注，导出 Markdown
+- **跨源搜索**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「修复VPN」）
+- **每日回顾**：事实化的当天回顾——概览统计、按工作区分组的项目进展、你自己的状态标记（离线生成，不调模型）
+- **对话详情**：看完整对话内容，加收藏、标签（下拉候选 + 自动保存）、备注，导出 Markdown / JSONL
+- **项目归档**：把相关对话勾选归入自命名项目，集中管理状态、笔记与任务清单
 
 ## 界面预览
 
@@ -75,6 +83,31 @@ python hub_agent.py projects
 **成本设计（分级检索）**：L1 索引级元数据（标题/时间/摘要，几乎零成本）→
 L2 摘要级（对话概览，便宜）→ L3 全文级（`budget` 参数控制字符预算，按需）。
 agent 90% 的查询在前两层就能解决。纯 Python 标准库实现，零依赖。
+
+## 常见问题（FAQ）
+
+**这个工具解决什么问题？**
+AI 编程助手（Codex CLI、Claude Code、Hermes、ZCode 等）的对话记录散落在各自目录，
+无法统一搜索和回顾。本工具把它们只读汇聚到一个本地仪表盘：跨 agent 全文搜索、
+每日工作回顾、项目归档、标签收藏、Markdown 导出。
+
+**支持哪些 AI 编程助手？**
+内置 6 个适配器：Codex CLI、Claude Code、Hermes、ZCode、QoderWork、WorkBuddy；
+其它 agent（包括 ChatGPT / Gemini 等导出的聊天记录）可通过 JSONL / Markdown /
+SQLite 自定义数据源接入，无需改代码。
+
+**如何在本机搜索所有 AI 对话记录？**
+启动后在顶部搜索框输入关键词，支持 AND / OR / NOT、"精确短语"、括号组合与
+中英文连写，并可按 Agent、时间范围、状态、标签组合筛选；勾选对话可批量导出
+Markdown / JSONL 或归入项目。
+
+**隐私安全吗？**
+服务只绑定 `127.0.0.1`：无局域网监听、无云端同步、无遥测；对各 agent 的原始
+数据只读；纯 Python 标准库实现，代码可完整审计。详见 [PRIVACY.md](PRIVACY.md)。
+
+**需要什么环境？**
+Python 3.10+（仅标准库，无需 pip install），Windows / macOS；也可直接运行
+打包好的桌面版。
 
 ## 未来方向
 
