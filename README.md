@@ -43,6 +43,15 @@
 
 **想接入其它 agent？** 支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 未来方向
+
+- **网页端对话接入**（保留方向，暂未内置）：ChatGPT / 千问 / Gemini / Claude 网页版等的
+  聊天记录存在各家服务器，本地无可靠数据源。计划支持读取浏览器导出的
+  `conversations.json` / Markdown / JSON（参考
+  [chatgpt-exporter](https://github.com/pionxzh/chatgpt-exporter)、
+  [AI-Chat-Md-Export](https://github.com/YunAsimov/AI-Chat-Md-Export) 等项目的格式）。
+  现阶段可先用自定义源（Markdown/JSON）手动接入。
+
 ## 快速开始
 
 ### 环境要求
