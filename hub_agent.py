@@ -40,7 +40,7 @@ PORT = os.environ.get("CONVERSATION_HUB_PORT", "8765")
 BASE = f"http://127.0.0.1:{PORT}"
 
 # 与 server.py 的 APP_VERSION 保持一致（手动同步：单点定义，避免散落多处写死）
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 
 # ---------------------------------------------------------------- HTTP 层

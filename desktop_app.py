@@ -79,14 +79,17 @@ def ensure_firewall_allowed() -> None:
     exe = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
     rule_name = "AIConversationHub (Inbound)"
 
-    # 检查规则是否已存在（用 bytes 避免 GBK 解码崩溃）
+    # 检查规则是否已存在。
+    # netsh show rule name=X：规则存在 returncode==0，否则 !=0（最可靠信号）。
+    # 不依赖 stdout 文本匹配——中文 Windows 下 netsh 输出是 GBK，且 PyInstaller
+    # exe 环境下子进程编码行为可能与开发机不同，靠文本匹配会误判。
     try:
         check = subprocess.run(
             ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"],
             capture_output=True, creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
-        if check.returncode == 0 and rule_name.encode("utf-8") in (check.stdout or b""):
-            return  # 规则已存在，跳过
+        if check.returncode == 0:
+            return  # 规则已存在，跳过提权
     except (OSError, subprocess.SubprocessError):
         pass
 
