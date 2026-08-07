@@ -329,7 +329,6 @@ body.sidebar-collapsed .utility-icon { display: grid; }
 .source-dot.claude { background: #b86f52; }
 .source-dot.qoderwork { background: #2d927d; }
 .source-dot.zcode { background: #4c6ef5; }
-.source-dot.chatgpt { background: #10a37f; }
 .source-dot.all {
   border: 1px solid var(--ink);
   background: transparent;
@@ -573,7 +572,6 @@ body.resizing-detail .detail-pane { pointer-events: none; }
 .brief-source.src-claude { background: rgba(202,113,60,.14); color: #ca713c; }
 .brief-source.src-qoderwork { background: rgba(22,140,145,.14); color: var(--codex); }
 .brief-source.src-zcode { background: rgba(76,110,245,.14); color: #3b5bdb; }
-.brief-source.src-chatgpt { background: rgba(16,163,127,.14); color: #0d8a6b; }
 .brief-toggle {
   flex: 0 0 auto; color: var(--muted); font-size: 9px;
   transition: transform .15s ease;

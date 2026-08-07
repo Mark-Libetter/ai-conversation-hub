@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite19">
+    <link rel="stylesheet" href="/app.css?v=lite18">
   </head>
   <body>
     <div class="app-frame">
@@ -55,9 +55,6 @@
               <button class="source-row" data-source="zcode" type="button">
                 <span class="source-dot zcode"></span><span>ZCode</span><b id="zcodeCount">—</b>
               </button>
-              <button class="source-row" data-source="chatgpt" type="button">
-                <span class="source-dot chatgpt"></span><span>ChatGPT</span><b id="chatgptCount">—</b>
-              </button>
               <button class="source-row" data-source="hermes" type="button">
                 <span class="source-dot hermes"></span><span>Hermes</span><b id="hermesCount">—</b>
               </button>
@@ -87,7 +84,6 @@
               <option value="claude">Claude Code</option>
               <option value="qoderwork">QoderWork</option>
               <option value="zcode">ZCode</option>
-              <option value="chatgpt">ChatGPT</option>
               <option value="hermes">Hermes</option>
             </select>
             <input id="searchInput" type="search" placeholder='自然语言直接搜；也可写 "短语"、OR、NOT、括号'>
@@ -514,6 +510,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite19" defer></script>
+    <script src="/app.js?v=lite18" defer></script>
   </body>
 </html>
