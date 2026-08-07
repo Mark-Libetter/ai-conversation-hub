@@ -52,7 +52,7 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.1.5"
+APP_VERSION = "0.1.6"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "conversation_relations",
@@ -4333,6 +4333,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/app.js":
             self._file(STATIC_DIR / "app.js", "text/javascript; charset=utf-8")
+            return
+        if path in {"/favicon.ico", "/favicon.png"}:
+            self._file(STATIC_DIR / "favicon.png", "image/png")
             return
         if (
             path in {"/api/summary", "/api/sources", "/api/daily", "/api/conversations"}
