@@ -2946,3 +2946,15 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
 }
 .proj-item-note:focus { outline: 0; border-color: var(--accent); background: var(--paper-2); }
 .project-item { align-items: flex-start; }
+
+/* ---- 每日回顾：事实化布局补充 ---- */
+.daily-progress, .daily-marks { margin-top: 22px; }
+.daily-group { margin-top: 10px; }
+.daily-group-title { font-size: 11px; font-weight: 700; color: var(--ink-2); letter-spacing: .03em; margin-bottom: 6px; }
+.daily-latest { display: block; margin-top: 2px; color: var(--ink-2); }
+.daily-status { display: inline-block; padding: 0 5px; border-radius: 4px; font-size: 9px; }
+.daily-status.done { background: var(--teal-soft); color: #21685f; }
+.daily-status.todo { background: #e3edf6; color: #2c5f8d; }
+.daily-status.ref { background: #f4ddd6; color: #8a4639; }
+.daily-mark-block + .daily-mark-block { margin-top: 14px; }
+.daily-marks-tip { margin-top: 10px; font-size: 10px; }

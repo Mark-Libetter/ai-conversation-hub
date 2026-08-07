@@ -909,156 +909,111 @@ function summaryHierarchyHtml(summary, { project = false } = {}) {
 
 // ---- 每日回顾：摘要卡（结构化摘要模板）+ 完整日报（日报模板） ----
 
-function dailySummaryCardHtml(data) {
-  const summary = data.summary;
-  const focus = summary.main_focus?.[0]?.text || "今天没有识别到唯一主线";
-  const achievements = summary.achievements || [];
-  const unfinished = summary.unfinished || summary.ongoing || [];
-  const decisions = summary.decisions || [];
-  const firstStep = (summary.first_step || summary.next_actions || [])[0];
+function dailyStatusBadge(c) {
+  if (c.user_status === "done") return `<span class="daily-status done">已完成</span>`;
+  if (c.user_status === "todo") return `<span class="daily-status todo">待继续</span>`;
+  if (c.user_status === "reference") return `<span class="daily-status ref">重要参考</span>`;
+  return "";
+}
+
+function dailyConversationRow(c) {
+  const latest = String(c.latest_user || "").trim();
+  const latestLine = latest
+    ? `<small class="daily-latest">你最近说：${escapeHtml(latest.length > 90 ? latest.slice(0, 90) + "…" : latest)}</small>`
+    : "";
+  const badge = dailyStatusBadge(c);
+  return `<button class="daily-conversation" type="button" data-source="${escapeHtml(c.source)}" data-id="${escapeHtml(c.id)}">
+    <span class="source-dot ${escapeHtml(c.source)}"></span>
+    <span>
+      <strong>${escapeHtml(c.title)}</strong>
+      ${latestLine}
+      <small>${escapeHtml(conversationSourceLabel(c))} · ${c.message_count} 条消息${badge ? " · " : ""}${badge}</small>
+    </span>
+    <time>${dateTime(c.updated_at)}</time>
+  </button>`;
+}
+
+function dailyOverviewHtml(data) {
+  const convs = data.conversations || [];
+  const s = data.stats || {};
+  if (!convs.length) {
+    return `<section class="daily-card"><div class="daily-card-head">
+      <span class="daily-card-label">今日概览</span>
+      <h2>当天没有可回顾的对话</h2></div></section>`;
+  }
+  const focal = [...convs].sort((a, b) => b.message_count - a.message_count)[0];
+  const agents = [...new Set(convs.map((c) => conversationSourceLabel(c)))];
+  const perSource = Object.entries(s.by_source || {}).filter(([, n]) => n > 0)
+    .map(([src, n]) => `<span><b>${n}</b> ${escapeHtml(conversationSourceLabel({ source: src }))}</span>`).join("");
   return `
     <section class="daily-card">
       <div class="daily-card-head">
-        <span class="daily-card-label">今日主线</span>
-        <h2>${escapeHtml(focus)}</h2>
-        ${summary.overview_sentence && summary.overview_sentence !== focus
-          ? `<p class="daily-card-overview">${escapeHtml(summary.overview_sentence)}</p>` : ""}
+        <span class="daily-card-label">今日概览</span>
+        <h2>${convs.length} 个对话 · ${s.messages || 0} 条有效消息</h2>
+        <p class="daily-card-overview">涉及 Agent：${agents.map(escapeHtml).join("、")}</p>
+      </div>
+      <div class="daily-card-next">
+        <span>当天投入最多</span>
+        <strong>${escapeHtml(focal.title)}</strong>
+        ${summaryEvidenceButton({ source: focal.source, conversation_id: focal.id })}
       </div>
       <div class="daily-card-metrics">
-        <span><b>${data.stats.conversations}</b> 对话</span>
-        <span><b>${data.stats.messages}</b> 有效消息</span>
-        <span class="m-done"><b>${achievements.length}</b> 完成</span>
-        <span class="m-open"><b>${unfinished.length}</b> 待继续</span>
-        <span><b>${decisions.length}</b> 决定</span>
-      </div>
-      <div class="daily-card-cols">
-        ${summaryTreeGroup("已完成", achievements.slice(0, 2), "achievement", "今天暂无可核验成果。")}
-        ${summaryTreeGroup("待继续", unfinished.slice(0, 2), "unfinished", "目前没有明确遗留事项。")}
-        ${summaryTreeGroup("关键决定", decisions.slice(0, 2), "decision", "今天没有关键决定。")}
-      </div>
-      ${firstStep ? `
-        <div class="daily-card-next">
-          <span>接下来先做</span>
-          <strong>${escapeHtml(firstStep.text)}</strong>
-          ${summaryEvidenceButton(firstStep)}
-        </div>` : ""}
-      <div class="daily-card-actions">
-        <button id="toggleDailyReportButton" class="button primary" type="button">
-          ${state.dailyReportOpen ? "收起完整日报" : "查看完整日报"}
-        </button>
-        <span class="muted">日报含逐节明细、数据概览与当天对话清单</span>
+        <span><b>${s.conversations || convs.length}</b> 对话</span>
+        <span><b>${s.messages || 0}</b> 有效消息</span>
+        ${perSource}
       </div>
     </section>
   `;
 }
 
-function reportItem(item, tone) {
-  const { title, detail } = summaryItemParts(item, tone);
-  const nextLine = (tone === "unfinished" || tone === "blocked") && item.next_action
-    ? `<p class="report-next"><b>${tone === "blocked" ? "建议动作" : "下一步"}</b>${escapeHtml(item.next_action)}</p>`
-    : "";
-  return `<li class="report-item ${tone}">
-    <div class="report-item-title">
-      <strong>${escapeHtml(title || item.text || "")}</strong>
-      ${summaryEvidenceButton(item)}
-    </div>
-    ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
-    ${nextLine}
-  </li>`;
-}
-
-function reportList(items, tone, empty) {
-  const values = items || [];
-  return values.length
-    ? `<ul class="report-list">${values.map((item) => reportItem(item, tone)).join("")}</ul>`
-    : `<p class="report-empty">${escapeHtml(empty)}</p>`;
-}
-
-function dailyReportHtml(data) {
-  const summary = data.summary;
-  const s = data.stats;
-  const blocked = summary.blocked || [];
-  const nextItems = [...(summary.first_step || []), ...(summary.next_actions || [])]
-    .filter((item, index, arr) => arr.findIndex((o) => o.text === item.text) === index)
-    .slice(0, 5);
-  const kv = (label, value) => `<div class="report-kv"><span>${escapeHtml(label)}</span><b>${value}</b></div>`;
-  const overviewParagraphs = [summary.overview_sentence || summary.overview || ""]
-    .concat(
-      String(summary.narrative || "")
-        .split(/\n\s*\n/)
-        .map((p) => p.trim())
-        .filter((p) => p && p !== (summary.overview_sentence || summary.overview))
-    )
-    .slice(0, 4);
+function dailyProgressHtml(data) {
+  const convs = data.conversations || [];
+  if (!convs.length) return "";
+  const groups = new Map();
+  for (const c of convs) {
+    const key = c.workspace && c.workspace !== "无工作区" ? c.workspace : "未分组对话";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
   return `
-    <header class="report-head">
-      <p class="eyebrow">DAILY REPORT</p>
-      <h2>${escapeHtml(dayLabel(data.day))} · 工作日报</h2>
-      <p class="muted">${data.conversations.length} 个对话 · ${s.messages} 条有效消息 · 生成于 ${dateTime(data.generated_at)}</p>
-    </header>
-
-    <section class="report-section">
-      <h3>一、今日概览</h3>
-      ${overviewParagraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
+    <section class="daily-section daily-progress">
+      <div class="daily-section-head"><h3>项目进展（按工作区分组）</h3><span>${groups.size} 组</span></div>
+      ${[...groups.entries()].map(([name, items]) => `
+        <div class="daily-group">
+          <div class="daily-group-title">${escapeHtml(name)} <span class="muted">· ${items.length} 个对话</span></div>
+          <div class="daily-conversation-list">${items.map(dailyConversationRow).join("")}</div>
+        </div>`).join("")}
     </section>
+  `;
+}
 
-    <section class="report-section">
-      <h3>二、已完成成果</h3>
-      ${reportList(summary.achievements, "achievement", "今天暂无可核验的完成成果。")}
+function dailyMarksHtml(data) {
+  const convs = data.conversations || [];
+  const todo = convs.filter((c) => c.user_status === "todo");
+  const done = convs.filter((c) => c.user_status === "done");
+  const block = (title, items, empty) => `
+    <div class="daily-mark-block">
+      <div class="daily-section-head"><h3>${title}</h3><span>${items.length}</span></div>
+      ${items.length
+        ? `<div class="daily-conversation-list">${items.map(dailyConversationRow).join("")}</div>`
+        : `<p class="daily-empty">${empty}</p>`}
+    </div>`;
+  return `
+    <section class="daily-section daily-marks">
+      <div class="daily-section-head"><h3>我的标记</h3><span>以你在对话详情里的状态为准</span></div>
+      ${block("待继续", todo, "当天没有标记为「待继续」的对话。")}
+      ${block("已完成", done, "当天没有标记为「已完成」的对话。")}
+      <p class="muted daily-marks-tip">打开对话详情，在「我的管理信息」里设置状态后，会出现在这里。</p>
     </section>
+  `;
+}
 
-    <section class="report-section">
-      <h3>三、关键决定</h3>
-      ${reportList(summary.decisions, "decision", "今天没有需要单独记录的关键决定。")}
-    </section>
-
-    <section class="report-section">
-      <h3>四、未完成与原因</h3>
-      ${reportList(summary.unfinished || summary.ongoing, "unfinished", "目前没有识别到明确的未完成事项。")}
-    </section>
-
-    <section class="report-section">
-      <h3>五、受阻项</h3>
-      ${reportList(blocked, "blocked", "今天没有明显的受阻事项。")}
-    </section>
-
-    <section class="report-section">
-      <h3>六、下一步计划</h3>
-      ${reportList(nextItems, "next", "暂无明确的下一步计划。")}
-    </section>
-
-    <section class="report-section">
-      <h3>七、数据概览</h3>
-      <div class="report-stats">
-        ${kv("对话数", s.conversations)}
-        ${kv("有效消息", s.messages)}
-        ${kv("工作区", s.workspaces)}
-        ${Object.entries(s.by_source || {})
-          .filter(([, count]) => count > 0)
-          .map(([source, count]) => kv(conversationSourceLabel({ source }), count))
-          .join("")}
-      </div>
-    </section>
-
-    <details class="report-conversations" ${data.conversations.length ? "" : ""}>
-      <summary>当天对话清单（${data.conversations.length}）</summary>
-      <div class="daily-conversation-list">
-        ${data.conversations.length ? data.conversations.map((item) => `
-          <button class="daily-conversation" type="button" data-source="${escapeHtml(item.source)}" data-id="${escapeHtml(item.id)}">
-            <span class="source-dot ${escapeHtml(item.source)}"></span>
-            <span><strong>${escapeHtml(item.title)}</strong><small>${
-              escapeHtml(conversationSourceLabel(item))
-            } · ${escapeHtml(item.workspace)} · ${item.message_count} 条消息</small></span>
-            <time>${dateTime(item.updated_at)}</time>
-          </button>
-        `).join("") : `<p class="daily-empty">当天没有可显示的对话。</p>`}
-      </div>
-    </details>
-
+function dailyManualNoteHtml(data) {
+  return `
     <div class="daily-manual-note">
       <div>
         <strong>人工补充与修订</strong>
-        <p class="muted">记录模型或规则没有捕捉到的成果、状态和下一步。</p>
+        <p class="muted">记录没有捕捉到的成果、状态和下一步。</p>
       </div>
       <textarea id="dailyManualNote" rows="3" placeholder="例如：项目已人工验收；下周继续处理数据迁移…">${escapeHtml(data.manual_note || "")}</textarea>
       <button id="saveDailyNoteButton" class="button secondary" type="button">保存补充</button>
@@ -1068,28 +1023,13 @@ function dailyReportHtml(data) {
 
 function renderDaily(data) {
   state.daily = data;
-  const summary = data.summary;
-  const generatorLabel = data.generator === "model"
-    ? `模型摘要 · ${data.model}`
-    : data.generator === "model_fallback"
-      ? `备用模型摘要 · ${data.model}`
-    : data.generator === "rules_after_model_error"
-      ? "模型失败，已回退模板摘要"
-      : "模板摘要 · 本地规则";
-  const templateName = data.template?.name || "daily_review_v3";
-  const statusBadges = [
-    data.is_today ? "今日草稿" : "历史回顾",
-    generatorLabel,
-    `模板 ${templateName}`,
-    data.is_stale ? "对话有更新，建议重新生成" : "",
-  ].filter(Boolean);
   const html = `<div class="daily-head">
-      <span class="muted">生成于 ${dateTime(data.generated_at)}</span>
+      <span class="muted">生成于 ${dateTime(data.generated_at)}${data.is_stale ? " · 对话有更新，可点右上角「刷新数据」重建" : ""}</span>
     </div>
-    ${dailySummaryCardHtml(data)}
-    <div class="daily-report" id="dailyReport" ${state.dailyReportOpen ? "" : "hidden"}>
-      ${dailyReportHtml(data)}
-    </div>
+    ${dailyOverviewHtml(data)}
+    ${dailyProgressHtml(data)}
+    ${dailyMarksHtml(data)}
+    ${dailyManualNoteHtml(data)}
   `;
   const brief = $("#findDailyBrief");
   if (brief) {
@@ -2483,8 +2423,9 @@ $("#dailyBody").addEventListener("click", async (event) => {
   const conversation = event.target.closest("[data-source][data-id]");
   if (conversation) {
     setView("find");
+    // 从回顾跳回找对话时归零滚动，避免残留滚动位置造成大片空白
+    document.querySelector(".app-workspace")?.scrollTo({ top: 0 });
     await openDetail(conversation.dataset.source, conversation.dataset.id);
-    detailPane.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
   const saveButton = event.target.closest("#saveDailyNoteButton");

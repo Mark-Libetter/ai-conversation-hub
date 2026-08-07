@@ -3492,6 +3492,12 @@ class ConversationIndex:
             except (TypeError, ValueError):
                 summary = None
             if summary is not None:
+                note_map: dict[tuple[str, str], dict[str, Any]] = {}
+                with notes_db() as conn:
+                    for note_row in conn.execute(
+                        "SELECT source, conversation_id, user_status, favorite FROM notes"
+                    ):
+                        note_map[(note_row["source"], note_row["conversation_id"])] = dict(note_row)
                 conversations = [
                     {
                         "source": item.source,
@@ -3502,6 +3508,8 @@ class ConversationIndex:
                         "message_count": item.message_count,
                         "latest_user": claim_text(item.preview, 240),
                         "updated_at": item.updated_at,
+                        "user_status": note_map.get((item.source, item.id), {}).get("user_status") or "",
+                        "favorite": bool(note_map.get((item.source, item.id), {}).get("favorite")),
                     }
                     for item in candidates
                 ]
@@ -3572,6 +3580,12 @@ class ConversationIndex:
             generated_at = time.time()
             manual_note = ""
             is_stale = False
+        note_map_slow: dict[tuple[str, str], dict[str, Any]] = {}
+        with notes_db() as conn:
+            for note_row in conn.execute(
+                "SELECT source, conversation_id, user_status, favorite FROM notes"
+            ):
+                note_map_slow[(note_row["source"], note_row["conversation_id"])] = dict(note_row)
         conversations = [
             {
                 "source": entry["source"],
@@ -3582,6 +3596,8 @@ class ConversationIndex:
                 "message_count": len(entry["messages"]),
                 "latest_user": claim_text(entry["latest_user"], 240),
                 "updated_at": entry["updated_at"],
+                "user_status": note_map_slow.get((entry["source"], entry["id"]), {}).get("user_status") or "",
+                "favorite": bool(note_map_slow.get((entry["source"], entry["id"]), {}).get("favorite")),
             }
             for entry in entries
         ]
