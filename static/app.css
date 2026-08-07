@@ -2932,5 +2932,14 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
 .assign-project-row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; }
 .assign-project-row:hover { border-color: var(--accent); }
 .assign-create { display: grid; gap: 8px; border-top: 1px dashed var(--line); padding-top: 12px; }
-.dialog-field { display: grid; gap: 6px; margin-bottom: 12px; }
-.dialog-field span { font-size: 12px; color: var(--muted); }
+.dialog-field { display: grid; gap: 6px; margin-bottom: 14px; }
+.dialog-field span { font-size: 12px; color: var(--muted); font-weight: 500; }
+.dialog-field .input, .dialog-field input, .dialog-field textarea {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--line-dark);
+  border-radius: 8px; background: var(--paper-2); color: var(--ink);
+  font-size: 13px; font-family: inherit; resize: vertical;
+}
+.dialog-field .input:focus, .dialog-field input:focus, .dialog-field textarea:focus {
+  outline: 0; border-color: var(--accent);
+}
+.dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }

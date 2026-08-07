@@ -1239,7 +1239,6 @@ function setView(view, { sync = true } = {}) {
   if (state.view === "settings") {
     loadSourceHealth().catch((error) => showToast(error.message));
     loadUpdateConfig().catch((error) => showToast(error.message));
-    loadCompanion().catch(() => {});
   }
   if (state.view === "assets") {
     loadAssets().catch((error) => showToast(error.message));
@@ -1286,7 +1285,7 @@ async function loadSourceHealth() {
 
 async function loadUpdateConfig() {
   const config = await api("/api/update");
-  $("#updateManifestUrl").value = config.manifest_url || "";
+  $("#updateManifestUrl").value = config.manifest_url || "https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/release/manifest.json";
   $("#updateAutoCheck").checked = Boolean(config.auto_check);
   $("#updateState").textContent = `当前版本 ${config.current_version}`;
 }
@@ -2783,6 +2782,8 @@ $("#refreshButton")?.addEventListener("click", async (event) => {
     button.textContent = "刷新数据";
   }
 });
+
+$("#openSetupButton")?.addEventListener("click", () => loadSetupStatus({ open: true }));
 
 $("#diagnoseSourcesButton").addEventListener("click", async (event) => {
   const button = event.currentTarget;

@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite18">
+    <link rel="stylesheet" href="/app.css?v=lite19">
   </head>
   <body>
     <div class="app-frame">
@@ -323,16 +323,6 @@
                 <p>内置 Codex 热门换肤风格，完全本地、即时切换并记住选择。</p>
                 <button id="openThemeSettingsButton" class="button secondary" type="button">选择皮肤</button>
               </section>
-              <section class="settings-card">
-                <span class="settings-index">05</span>
-                <h3>伴随端（小程序）</h3>
-                <p>在同一 Wi-Fi 下向手机提供已脱敏的日报/待办与随手记回传。默认关闭，开启后局域网监听。</p>
-                <div class="settings-card-actions">
-                  <label><input id="companionEnabled" type="checkbox"> 开启伴随端</label>
-                  <button id="companionRegenButton" class="button ghost" type="button">更换配对码</button>
-                </div>
-                <div id="companionState" class="muted">未开启</div>
-              </section>
             </div>
             <section class="source-health-card">
               <div><h3>数据源质量报告</h3><p id="sourceQualitySummary">路径、完整度、结构兼容性与索引消息数</p></div>
@@ -498,18 +488,21 @@
     </dialog>
 
     <dialog id="projectFormDialog" class="settings-dialog" aria-labelledby="projectFormTitle">
-      <div class="dialog-body">
-        <h3 id="projectFormTitle">项目</h3>
-        <label class="dialog-field"><span>名字</span><input id="projectNameInput" class="input" type="text" maxlength="80" placeholder="给这堆对话起个名"></label>
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">PROJECT</p><h2 id="projectFormTitle">新建项目</h2></div>
+          <button id="projectFormCancel" class="button ghost" type="button">取消</button>
+        </div>
+        <p class="muted">把相关的对话归到一起，方便集中回顾和导出。</p>
+        <label class="dialog-field"><span>项目名称</span><input id="projectNameInput" class="input" type="text" maxlength="80" placeholder="给这堆对话起个名"></label>
         <label class="dialog-field"><span>说明（可选）</span><textarea id="projectDescInput" class="input" rows="3" maxlength="2000" placeholder="这个项目是关于什么的…"></textarea></label>
         <div class="dialog-actions">
           <button id="projectFormSave" class="button primary" type="button">保存</button>
-          <button id="projectFormCancel" class="button ghost" type="button">取消</button>
         </div>
       </div>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite18" defer></script>
+    <script src="/app.js?v=lite19" defer></script>
   </body>
 </html>
