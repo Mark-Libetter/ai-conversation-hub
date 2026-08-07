@@ -78,35 +78,28 @@ def ensure_firewall_allowed() -> None:
         return
     exe = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
     rule_name = "AIConversationHub (Inbound)"
-    # 检查规则是否已存在（不需要管理员权限）
+
+    # 检查规则是否已存在（用 bytes 避免 GBK 解码崩溃）
     try:
         check = subprocess.run(
             ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"],
-            capture_output=True, text=True, creationflags=0x08000000,  # CREATE_NO_WINDOW
+            capture_output=True, creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
-        if check.returncode == 0 and rule_name in (check.stdout or ""):
+        if check.returncode == 0 and rule_name.encode("utf-8") in (check.stdout or b""):
             return  # 规则已存在，跳过
     except (OSError, subprocess.SubprocessError):
         pass
-    # 需要添加规则：用 VBScript 中介提权（弹 UAC，避免黑窗）
-    vbs = (
-        'Set s=CreateObject("Shell.Application")\n'
-        f's.ShellExecute "netsh","advfirewall firewall add rule name=\"{rule_name}\" '
-        f'dir=in action=allow program=\"{exe}\" enable=yes profile=any","","runas",0\n'
-    )
-    vbs_path = os.path.join(os.environ.get("TEMP", "."), "_hub_firewall.vbs")
+
+    # 用 ctypes ShellExecuteW 提权，避免 VBS 引号转义问题
+    import ctypes
+    params = f'advfirewall firewall add rule name="{rule_name}" dir=in action=allow program="{exe}" enable=yes profile=any'
     try:
-        with open(vbs_path, "w", encoding="utf-8") as f:
-            f.write(vbs)
-        subprocess.run(["wscript", vbs_path], capture_output=True, timeout=60)
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", "netsh", params, None, 0  # 0 = SW_HIDE
+        )
+    except (OSError, Exception):
         pass
-    finally:
-        try:
-            os.remove(vbs_path)
-        except OSError:
-            pass
-    time.sleep(2)
+    time.sleep(3)
 
 
 def launch() -> None:
