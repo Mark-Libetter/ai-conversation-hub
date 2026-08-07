@@ -2976,3 +2976,32 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
 .daily-status.ref { background: #f4ddd6; color: #8a4639; }
 .daily-mark-block + .daily-mark-block { margin-top: 14px; }
 .daily-marks-tip { margin-top: 10px; font-size: 10px; }
+
+/* ---- 筛选区：更多筛选弹层 + 标签 chips ---- */
+.more-filters { position: relative; flex: 0 0 auto; }
+.more-filters summary {
+  list-style: none; cursor: pointer; min-height: 34px; display: inline-flex; align-items: center;
+  padding: 6px 12px; border: 1px solid var(--line-dark); border-radius: 8px;
+  background: var(--paper-2); color: var(--ink-2); font-size: 11px; white-space: nowrap;
+}
+.more-filters summary::-webkit-details-marker { display: none; }
+.more-filters summary::after { content: "▾"; margin-left: 6px; font-size: 9px; opacity: .7; }
+.more-filters.has-value summary { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.more-filters-panel {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0;
+  display: grid; gap: 10px; padding: 12px; min-width: 230px;
+  border: 1px solid var(--line-dark); border-radius: 10px;
+  background: var(--paper-2); box-shadow: 0 6px 18px rgba(23,63,59,.14);
+}
+.more-filters-panel label { display: grid; gap: 5px; font-size: 10px; color: var(--muted); font-weight: 600; }
+.more-filters-panel #workspaceFilter, .more-filters-panel #nativeProjectFilter { width: 100%; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; flex: 0 1 auto; }
+.tag-chip {
+  padding: 3px 10px; border: 1px solid var(--line-dark); border-radius: 999px;
+  background: var(--paper-2); color: var(--ink-2); font-size: 10px; white-space: nowrap;
+  cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.tag-chip b { font-weight: 600; opacity: .55; margin-left: 3px; }
+.tag-chip:hover { border-color: var(--accent); color: var(--accent); }
+.tag-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.tag-chip.active b { color: rgba(255,255,255,.75); opacity: 1; }

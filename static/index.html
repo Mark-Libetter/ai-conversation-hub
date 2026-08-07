@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-        <link rel="stylesheet" href="/app.css?v=lite25">
+        <link rel="stylesheet" href="/app.css?v=lite26">
   </head>
   <body>
     <div class="app-frame">
@@ -131,15 +131,21 @@
                     <option value="reference">重要参考</option>
                     <option value="archive_candidate">可归档候选</option>
                   </select>
-                  <select id="workspaceFilter" aria-label="工作区">
-                    <option value="all">全部工作区</option>
-                  </select>
-                  <select id="nativeProjectFilter" aria-label="Agent 原生项目">
-                    <option value="all">全部原生项目</option>
-                  </select>
-                  <select id="tagFilter" aria-label="标签">
-                    <option value="">全部标签</option>
-                  </select>
+                  <details id="moreFilters" class="more-filters">
+                    <summary>更多筛选</summary>
+                    <div class="more-filters-panel">
+                      <label>工作区
+                        <select id="workspaceFilter" aria-label="工作区">
+                          <option value="all">全部工作区</option>
+                        </select>
+                      </label>
+                      <label>Agent 原生项目
+                        <select id="nativeProjectFilter" aria-label="Agent 原生项目">
+                          <option value="all">全部原生项目</option>
+                        </select>
+                      </label>
+                    </div>
+                  </details>
                   <button id="favoriteFilter" class="button ghost" type="button" aria-pressed="false">只看收藏</button>
                   <button id="clearFiltersButton" class="button ghost" type="button">清除</button>
                 </div>
@@ -165,6 +171,7 @@
               <section class="list-pane">
                 <div class="list-head">
                   <span id="resultCount">正在读取…</span>
+                  <div id="tagChips" class="tag-chips"></div>
                   <span class="list-head-actions">
                     <span class="muted">按最近活动排列</span>
                     <button id="detailToggleButton" class="button secondary detail-drawer-toggle" type="button"
@@ -503,6 +510,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite26" defer></script>
+    <script src="/app.js?v=lite27" defer></script>
   </body>
 </html>

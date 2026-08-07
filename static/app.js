@@ -656,18 +656,7 @@ function renderWorkspaceSummary() {
     state.nativeProject = "all";
     state.filters[state.source].nativeProject = "all";
   }
-  const tagSelect = $("#tagFilter");
-  if (tagSelect) {
-    const tagRows = data.tags || [];
-    tagSelect.innerHTML = `<option value="">全部标签</option>` +
-      tagRows.map(([name, count]) =>
-        `<option value="${escapeHtml(name)}">${escapeHtml(name)} · ${count}</option>`
-      ).join("");
-    tagSelect.value = [...tagSelect.options].some((option) => option.value === state.tag)
-      ? state.tag
-      : "";
-    if (tagSelect.value !== state.tag) state.tag = "";
-  }
+  renderTagChips();
 
   document.querySelectorAll("#quickRanges [data-range]").forEach((button) => {
     const value = button.dataset.range;
@@ -677,6 +666,18 @@ function renderWorkspaceSummary() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+}
+
+function renderTagChips() {
+  const box = $("#tagChips");
+  if (!box) return;
+  const tagRows = (state.summary && state.summary.tags) || [];
+  if (state.tag && !tagRows.some(([name]) => name === state.tag)) state.tag = "";
+  const top = tagRows.slice(0, 8);
+  if (state.tag && !top.some(([name]) => name === state.tag)) top.unshift([state.tag, null]);
+  box.innerHTML = top.map(([name, count]) =>
+    `<button class="tag-chip${state.tag === name ? " active" : ""}" type="button" data-tag="${escapeHtml(name)}">${escapeHtml(name)}${count != null ? `<b>${count}</b>` : ""}</button>`
+  ).join("");
 }
 
 function queryString() {
@@ -1182,7 +1183,13 @@ function syncControls() {
   $("#searchInput").value = state.query;
   $("#workspaceFilter").value = state.workspace;
   $("#nativeProjectFilter").value = state.nativeProject;
-  $("#tagFilter").value = state.tag;
+  const moreFilters = $("#moreFilters");
+  if (moreFilters) {
+    const activeCount = (state.workspace !== "all" ? 1 : 0) + (state.nativeProject !== "all" ? 1 : 0);
+    moreFilters.classList.toggle("has-value", activeCount > 0);
+    moreFilters.querySelector("summary").textContent = activeCount ? `更多筛选 · ${activeCount}` : "更多筛选";
+  }
+  renderTagChips();
   renderWorkspaceHeading();
   renderWorkspaceSummary();
 }
@@ -2501,9 +2508,17 @@ $("#nativeProjectFilter").addEventListener("change", (event) => {
   resetAndLoad();
 });
 
-$("#tagFilter").addEventListener("change", (event) => {
-  state.tag = event.target.value;
+$("#tagChips").addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-tag]");
+  if (!chip) return;
+  state.tag = state.tag === chip.dataset.tag ? "" : chip.dataset.tag;
+  renderTagChips();
   resetAndLoad();
+});
+
+document.addEventListener("click", (event) => {
+  const more = $("#moreFilters");
+  if (more && more.open && !event.target.closest("#moreFilters")) more.open = false;
 });
 
 $("#favoriteFilter").addEventListener("click", () => {

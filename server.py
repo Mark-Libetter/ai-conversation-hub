@@ -3890,6 +3890,8 @@ class ConversationIndex:
             item.tags = tags
             item.user_status = user_status
             item.favorite = bool(favorite)
+            # 标签/收藏变化要立即反映到摘要（标签筛选、收藏统计），失效缓存
+            self._summary_cache = {"key": "", "payload": None}
         return {"ok": True, "updated_at": now}
 
     def summary(self) -> dict[str, Any]:
