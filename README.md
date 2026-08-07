@@ -14,7 +14,7 @@
 
 如果你同时用 Codex、Hermes、WorkBuddy、QoderWork、Claude Code、ZCode 等 AI 编程助手，对话散落在各家，找一个"之前在哪聊过这个"很痛苦。这个工具把它们汇聚到一个本地界面，让你：
 
-- **跨源搜索**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「修复VPN」）
+- **跨源搜索**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「调试API」）
 - **每日回顾**：事实化的当天回顾——概览统计、按工作区分组的项目进展、你自己的状态标记（离线生成，不调模型）
 - **对话详情**：看完整对话内容，加收藏、标签（下拉候选 + 自动保存）、备注，导出 Markdown / JSONL
 - **项目归档**：把相关对话勾选归入自命名项目，集中管理状态、笔记与任务清单
@@ -79,7 +79,7 @@ claude mcp add conversation-hub -- python /path/to/hub_agent.py mcp
 ### 方式二：CLI（任何能跑 shell 的 agent）
 
 ```bash
-python hub_agent.py search "修复VPN" --days 7 --limit 5
+python hub_agent.py search "调试API" --days 7 --limit 5
 python hub_agent.py show <source> <conversation_id> --level full --budget 8000
 python hub_agent.py daily --date 2026-08-08
 python hub_agent.py projects

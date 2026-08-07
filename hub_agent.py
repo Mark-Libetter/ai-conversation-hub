@@ -7,7 +7,7 @@ hub_agent.py —— AI Conversation Hub 的 agent 接入工具（纯标准库，
 
 1) CLI（任何能执行 shell 的 agent 直接调用）：
    python hub_agent.py ping
-   python hub_agent.py search "修复VPN" --days 7 --limit 5 [--json]
+   python hub_agent.py search "调试API" --days 7 --limit 5 [--json]
    python hub_agent.py show <source> <conversation_id> [--level summary|full] [--budget 8000]
    python hub_agent.py daily [--date 2026-08-08]
    python hub_agent.py projects
@@ -161,7 +161,7 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "q": {"type": "string", "description": "检索式，如：修复VPN OR 代理"},
+                "q": {"type": "string", "description": "检索式，如：调试API OR 登录"},
                 "source": {"type": "string", "description": "限定来源：codex/claude/hermes/zcode/qoderwork/workbuddy，默认 all"},
                 "days": {"type": "string", "description": "限定最近 N 天：1/3/7/30，留空为全部"},
                 "tag": {"type": "string", "description": "按标签过滤"},

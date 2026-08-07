@@ -1222,7 +1222,7 @@ def _is_cjk(ch: str) -> bool:
 
 
 def split_mixed_word(word: str) -> list[str]:
-    """把「修复VPN」这类中英混写词按文字边界拆成多段；纯中文/纯西文原样返回。"""
+    """把「调试API」这类中英混写词按文字边界拆成多段；纯中文/纯西文原样返回。"""
     if not any(_is_cjk(ch) for ch in word):
         return [word]
     parts: list[str] = []
@@ -1237,7 +1237,7 @@ def split_mixed_word(word: str) -> list[str]:
         current.append(ch)
     if current:
         parts.append("".join(current))
-    # 丢弃纯标点段（如「修复VPN。」里的「。」），保留含文字字符的段
+    # 丢弃纯标点段（如「调试API。」里的「。」），保留含文字字符的段
     kept = [p for p in parts if any(ch.isalnum() or _is_cjk(ch) for ch in p)]
     return kept or [word]
 
