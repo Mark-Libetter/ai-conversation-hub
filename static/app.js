@@ -1036,6 +1036,7 @@ function dailyManualNoteHtml(data) {
 
 function renderDaily(data) {
   state.daily = data;
+  const summary = data.summary;
   const html = `<div class="daily-head">
       <span class="muted">生成于 ${dateTime(data.generated_at)}${data.is_stale ? " · 对话有更新，可点右上角「刷新数据」重建" : ""}</span>
     </div>
