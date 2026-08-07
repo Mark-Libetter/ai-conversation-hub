@@ -307,15 +307,12 @@
               </section>
               <section class="settings-card">
                 <span class="settings-index">03</span>
-                <h3>安全更新</h3>
-                <p>从 HTTPS 清单检查更新；下载后校验 SHA-256，绝不自动执行。</p>
-                <input id="updateManifestUrl" type="url" placeholder="GitHub Release manifest.json 地址">
-                <label><input id="updateAutoCheck" type="checkbox"> 启动时提醒检查</label>
+                <h3>检查更新</h3>
+                <p>前往 GitHub Releases 下载最新版本，解压即用。</p>
                 <div class="settings-card-actions">
-                  <button id="saveUpdateSettingsButton" class="button ghost" type="button">保存</button>
-                  <button id="checkUpdateButton" class="button secondary" type="button">检查更新</button>
+                  <a class="button secondary" href="https://github.com/Mark-Libetter/ai-conversation-hub/releases" target="_blank" rel="noopener">打开下载页</a>
                 </div>
-                <div id="updateState" class="muted"></div>
+                <div id="updateState" class="muted">当前版本 0.20.4</div>
               </section>
               <section class="settings-card">
                 <span class="settings-index">04</span>

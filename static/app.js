@@ -1284,21 +1284,11 @@ async function loadSourceHealth() {
 }
 
 async function loadUpdateConfig() {
-  const config = await api("/api/update");
-  $("#updateManifestUrl").value = config.manifest_url || "https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/release/manifest.json";
-  $("#updateAutoCheck").checked = Boolean(config.auto_check);
-  $("#updateState").textContent = `当前版本 ${config.current_version}`;
-}
-
-async function saveUpdateConfig() {
-  const result = await api("/api/update", {
-    method: "POST",
-    body: JSON.stringify({
-      manifest_url: $("#updateManifestUrl").value.trim(),
-      auto_check: $("#updateAutoCheck").checked,
-    }),
-  });
-  $("#updateState").textContent = `已保存 · 当前版本 ${result.current_version}`;
+  try {
+    const config = await api("/api/update");
+    const el = $("#updateState");
+    if (el) el.textContent = `当前版本 ${config.current_version}`;
+  } catch {}
 }
 
 async function previewBackupFile(file) {
@@ -2908,40 +2898,8 @@ $("#backupFileInput").addEventListener("change", (event) => {
   event.target.value = "";
 });
 
-$("#saveUpdateSettingsButton").addEventListener("click", () => {
-  saveUpdateConfig().then(() => showToast("更新设置已保存")).catch((error) => showToast(error.message));
-});
 
-$("#checkUpdateButton").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  button.textContent = "检查中…";
-  try {
-    const result = await api("/api/update/check", {
-      method: "POST",
-      body: JSON.stringify({ manifest_url: $("#updateManifestUrl").value.trim() }),
-    });
-    state.updateCandidate = result.available ? result : null;
-    $("#updateState").innerHTML = result.available
-      ? `发现 ${escapeHtml(result.version)}：${escapeHtml(result.notes || "有新版本")}
-        <button id="downloadUpdateButton" class="button secondary" type="button">下载并校验</button>`
-      : `已是最新版本 ${escapeHtml(result.current_version)}`;
-    if (result.available) {
-      $("#downloadUpdateButton").addEventListener("click", async () => {
-        const downloaded = await api("/api/update/download", {
-          method: "POST",
-          body: JSON.stringify({ url: result.url, sha256: result.sha256 }),
-        });
-        $("#updateState").textContent = `${downloaded.message} 保存位置：${downloaded.path}`;
-      });
-    }
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-    button.textContent = "检查更新";
-  }
-});
+
 
 $("#themeButton").addEventListener("click", openThemeDialog);
 $("#detailToggleButton").addEventListener("click", () => {
