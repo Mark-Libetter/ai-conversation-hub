@@ -6,7 +6,6 @@ import heapq
 import hashlib
 import json
 import os
-import platform
 import re
 import sys
 
@@ -25,8 +24,6 @@ import subprocess
 import threading
 import time
 import urllib.parse
-import urllib.error
-import urllib.request
 import webbrowser
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -47,7 +44,6 @@ from source_adapters import (
     load_custom_source,
     load_extra_source,
 )
-import companion
 
 
 APP_DIR = RESOURCE_DIR
@@ -4139,132 +4135,6 @@ class ConversationIndex:
         self._sync_conversation_relations()
         return {"ok": True, "inserted": inserted, "updated": updated, "preview": preview}
 
-    @staticmethod
-    def _version_tuple(value: str) -> tuple[int, ...]:
-        numbers = re.findall(r"\d+", value)
-        return tuple(int(number) for number in numbers[:4]) or (0,)
-
-    @staticmethod
-    def _update_url(value: Any) -> str:
-        url = clean_text(value, 1200)
-        parsed = urllib.parse.urlsplit(url)
-        if not url or parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError("更新地址必须是 HTTPS")
-        return url
-
-    def update_config(self) -> dict[str, Any]:
-        settings = read_app_settings()
-        return {
-            "current_version": APP_VERSION,
-            "manifest_url": settings.get("update_manifest_url", ""),
-            "auto_check": settings.get("update_auto_check", "0") == "1",
-        }
-
-    def save_update_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        url = clean_text(payload.get("manifest_url"), 1200)
-        if url:
-            self._update_url(url)
-        now = time.time()
-        values = {
-            "update_manifest_url": url,
-            "update_auto_check": "1" if payload.get("auto_check") else "0",
-        }
-        with notes_db() as conn:
-            for key, value in values.items():
-                conn.execute(
-                    """
-                    INSERT INTO app_settings(key,value,updated_at) VALUES(?,?,?)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
-                    """,
-                    (key, value, now),
-                )
-            conn.commit()
-        return {"ok": True, **self.update_config()}
-
-    def check_update(self, payload: dict[str, Any]) -> dict[str, Any]:
-        url = self._update_url(payload.get("manifest_url") or self.update_config()["manifest_url"])
-        request = urllib.request.Request(url, headers={"User-Agent": f"AIConversationHub/{APP_VERSION}"})
-        try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                raw = response.read(1_000_001)
-        except (OSError, urllib.error.URLError) as exc:
-            raise ValueError(f"检查更新失败：{exc}") from exc
-        if len(raw) > 1_000_000:
-            raise ValueError("更新清单超过 1 MB")
-        try:
-            manifest = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError("更新清单不是有效 JSON") from exc
-        if not isinstance(manifest, dict):
-            raise ValueError("更新清单格式无效")
-        version = clean_text(manifest.get("version"), 40)
-        architecture = platform.machine().casefold()
-        platform_key = (
-            f"macos-{'arm64' if architecture in {'arm64', 'aarch64'} else 'x86_64'}"
-            if sys.platform == "darwin"
-            else (
-                f"windows-{'arm64' if architecture in {'arm64', 'aarch64'} else 'x86_64'}"
-                if os.name == "nt"
-                else f"linux-{architecture or 'unknown'}"
-            )
-        )
-        assets = manifest.get("assets")
-        selected = assets.get(platform_key) if isinstance(assets, dict) else None
-        if selected is None and os.name == "nt":
-            selected = {"url": manifest.get("url"), "sha256": manifest.get("sha256")}
-        if not isinstance(selected, dict):
-            raise ValueError(f"更新清单没有适用于 {platform_key} 的安装包")
-        download_url = self._update_url(selected.get("url"))
-        sha256 = clean_text(selected.get("sha256"), 80).casefold()
-        if not re.fullmatch(r"[0-9a-f]{64}", sha256):
-            raise ValueError("更新清单缺少有效 SHA-256")
-        return {
-            "current_version": APP_VERSION,
-            "version": version,
-            "available": self._version_tuple(version) > self._version_tuple(APP_VERSION),
-            "url": download_url,
-            "sha256": sha256,
-            "notes": clean_text(manifest.get("notes"), 2000),
-            "signature": clean_text(manifest.get("signature"), 4000),
-            "platform": platform_key,
-        }
-
-    def download_update(self, payload: dict[str, Any]) -> dict[str, Any]:
-        url = self._update_url(payload.get("url"))
-        expected = clean_text(payload.get("sha256"), 80).casefold()
-        if not re.fullmatch(r"[0-9a-f]{64}", expected):
-            raise ValueError("缺少有效 SHA-256")
-        target_dir = DATA_DIR / "Updates"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        fallback_name = (
-            "AIConversationHub-update.dmg"
-            if sys.platform == "darwin"
-            else "AIConversationHub-update.exe"
-        )
-        filename = safe_filename(Path(urllib.parse.urlsplit(url).path).name, fallback_name)
-        target = target_dir / filename
-        request = urllib.request.Request(url, headers={"User-Agent": f"AIConversationHub/{APP_VERSION}"})
-        digest = hashlib.sha256()
-        try:
-            with urllib.request.urlopen(request, timeout=90) as response, target.open("wb") as handle:
-                while chunk := response.read(1024 * 1024):
-                    digest.update(chunk)
-                    handle.write(chunk)
-        except (OSError, urllib.error.URLError) as exc:
-            target.unlink(missing_ok=True)
-            raise ValueError(f"下载更新失败：{exc}") from exc
-        actual = digest.hexdigest()
-        if actual != expected:
-            target.unlink(missing_ok=True)
-            raise ValueError("更新包 SHA-256 校验失败，文件已删除")
-        return {
-            "ok": True,
-            "path": str(target),
-            "sha256": actual,
-            "executed": False,
-            "message": "更新包已校验并保存；不会自动执行。",
-        }
-
 
 INDEX = ConversationIndex()
 CSRF_TOKEN = secrets.token_urlsafe(32)
@@ -4416,9 +4286,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/token":
             self._json({"token": CSRF_TOKEN})
             return
-        if path == "/api/companion":
-            self._json({"ok": True, **companion.status()})
-            return
         if path == "/api/projects":
             self._json({"ok": True, "projects": projects_list()})
             return
@@ -4451,9 +4318,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/sources":
             self._json(INDEX.source_health())
-            return
-        if path == "/api/update":
-            self._json(INDEX.update_config())
             return
         if path == "/api/daily":
             try:
@@ -4529,13 +4393,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/note":
                 self._json(INDEX.save_note(payload))
                 return
-            if path == "/api/companion":
-                if "enabled" in payload:
-                    companion.set_enabled(bool(payload.get("enabled")))
-                if payload.get("regenerate_token"):
-                    companion.regenerate_token()
-                self._json({"ok": True, **companion.sync(INDEX)})
-                return
             if path == "/api/projects":
                 self._json(projects_mutate(payload))
                 return
@@ -4550,15 +4407,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/backup/restore":
                 self._json(INDEX.backup_restore(payload))
-                return
-            if path == "/api/update":
-                self._json(INDEX.save_update_config(payload))
-                return
-            if path == "/api/update/check":
-                self._json(INDEX.check_update(payload))
-                return
-            if path == "/api/update/download":
-                self._json(INDEX.download_update(payload))
                 return
             if path == "/api/sources/diagnose":
                 INDEX.refresh()
@@ -4605,13 +4453,6 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
     print("Local-only. Press Ctrl+C to stop.")
     # 首开提速：端口就绪后立即在后台预热首屏端点，与首批请求并发。
     threading.Thread(target=startup_warmup, name="hub-startup-warmup", daemon=True).start()
-    # 伴随端（小程序）局域网监听：默认关闭，按配置启停。
-    try:
-        if companion.read_config()["enabled"]:
-            print(f"Companion LAN listener on 0.0.0.0:{companion.read_config()['port']}")
-        companion.sync(INDEX)
-    except (OSError, sqlite3.DatabaseError) as exc:
-        print(f"companion listener not started: {exc}")
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

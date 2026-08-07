@@ -1,7 +1,10 @@
 # Privacy
 
-AI Conversation Hub Lite is local-first. Its server binds only to `127.0.0.1`;
-original conversation stores are opened read-only and are never renamed,
+AI Conversation Hub Lite is local-first. Its server binds only to `127.0.0.1` —
+there is no LAN listener, no device pairing, and no remote access path of any
+kind.
+
+Original conversation stores are opened read-only and are never renamed,
 archived, deleted, or modified.
 
 The Hub indexes only top-level user and assistant text. System/developer
@@ -16,7 +19,3 @@ conversations or machine-specific source settings.
 
 Search and the rule-based daily review are fully deterministic and offline: no
 model endpoint is ever contacted, and the Lite build has no model features.
-
-The optional update checker stays idle until you paste a manifest URL yourself.
-It then contacts only that HTTPS URL, verifies downloaded packages by SHA-256,
-and never executes anything automatically.

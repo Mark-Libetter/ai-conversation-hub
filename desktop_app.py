@@ -39,16 +39,34 @@ def remembered_port() -> int | None:
         return None
 
 
-def available_port() -> int:
+def remember_port(port: int) -> None:
+    try:
+        INSTANCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        INSTANCE_PATH.write_text(
+            json.dumps({"port": port}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def running_port() -> int | None:
+    """在默认端口段里找一个已经在跑、且数据目录一致的实例；没有则返回 None。"""
     for port in range(8765, 8796):
         if health(port):
             return port
+    return None
+
+
+def free_port() -> int:
+    """找一个真正空闲、可以绑定的端口。被占用的端口一律跳过。"""
+    for port in range(8765, 8796):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             try:
                 probe.bind(("127.0.0.1", port))
-                return port
             except OSError:
                 continue
+            return port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
@@ -94,12 +112,16 @@ def ensure_firewall_allowed() -> None:
 def launch() -> None:
     from server import run_server
 
+    # 已有实例就复用：先认 instance.json 记住的端口，再扫默认端口段。
+    # 复用时绝不能再起一个 server 去 bind 同一端口（否则 WinError 10048）。
     port = remembered_port()
-    server_thread = None
-
     if not port or not health(port):
+        port = running_port()
+
+    server_thread = None
+    if not port:
         ensure_firewall_allowed()
-        port = available_port()
+        port = free_port()
 
         # 线程内启动 server，不再 spawn 子进程（避免防火墙拦跨进程 TCP）
         server_thread = threading.Thread(
@@ -112,17 +134,20 @@ def launch() -> None:
         for _ in range(60):
             if health(port):
                 break
+            if not server_thread.is_alive():
+                raise RuntimeError(
+                    f"服务线程在启动过程中退出（端口 {port}），请查看上方的错误信息。"
+                )
             time.sleep(0.2)
         else:
             raise RuntimeError("AI 对话中心未能启动，请重新安装或查看日志。")
-        INSTANCE_PATH.write_text(
-            json.dumps({"port": port}, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+
+    remember_port(port)
     webbrowser.open(f"http://127.0.0.1:{port}/")
 
-    # 保持主进程存活（server 线程是 daemon，主进程退出则全部停止）
-    if server_thread and server_thread.is_alive():
+    # 复用已有实例时 server_thread 为 None：浏览器已打开，本进程直接退出即可。
+    # 自己启动的实例才需要保持主进程存活（server 线程是 daemon）。
+    if server_thread:
         try:
             server_thread.join()
         except KeyboardInterrupt:
