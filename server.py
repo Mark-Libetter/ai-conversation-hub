@@ -1210,6 +1210,38 @@ def claim_text(value: str, limit: int = 260) -> str:
 SearchNode = tuple[Any, ...]
 
 
+def _is_cjk(ch: str) -> bool:
+    code = ord(ch)
+    return (
+        0x4E00 <= code <= 0x9FFF      # CJK 基本区
+        or 0x3400 <= code <= 0x4DBF   # 扩展 A
+        or 0xF900 <= code <= 0xFAFF   # 兼容表意
+        or 0x3040 <= code <= 0x30FF   # 日文假名
+        or 0xAC00 <= code <= 0xD7AF   # 谚文
+    )
+
+
+def split_mixed_word(word: str) -> list[str]:
+    """把「修复VPN」这类中英混写词按文字边界拆成多段；纯中文/纯西文原样返回。"""
+    if not any(_is_cjk(ch) for ch in word):
+        return [word]
+    parts: list[str] = []
+    current: list[str] = []
+    mode: str | None = None
+    for ch in word:
+        ch_mode = "cjk" if _is_cjk(ch) else "other"
+        if mode is not None and ch_mode != mode:
+            parts.append("".join(current))
+            current = []
+        mode = ch_mode
+        current.append(ch)
+    if current:
+        parts.append("".join(current))
+    # 丢弃纯标点段（如「修复VPN。」里的「。」），保留含文字字符的段
+    kept = [p for p in parts if any(ch.isalnum() or _is_cjk(ch) for ch in p)]
+    return kept or [word]
+
+
 def search_tokens(query: str) -> list[tuple[str, str]]:
     value = clean_text(query, 500)
     tokens: list[tuple[str, str]] = []
@@ -1248,7 +1280,8 @@ def search_tokens(query: str) -> list[tuple[str, str]]:
         elif word.startswith("-") and len(word) > 1:
             tokens.extend((("NOT", "NOT"), ("TERM", word[1:].casefold())))
         else:
-            tokens.append(("TERM", word.casefold()))
+            for part in split_mixed_word(word):
+                tokens.append(("TERM", part.casefold()))
         index = end
     if len(tokens) > 48:
         raise ValueError("搜索条件过多，请精简到 48 个符号以内")
