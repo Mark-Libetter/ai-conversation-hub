@@ -2613,21 +2613,27 @@ class ConversationIndex:
         latest_user = next((m["text"] for m in reversed(messages) if m["role"] == "user"), "")
         latest_assistant = next((m["text"] for m in reversed(messages) if m["role"] == "assistant"), "")
         with notes_db() as conn:
-            assignment = conn.execute(
-                "SELECT * FROM project_assignments WHERE source=? AND conversation_id=?",
-                (source, conversation_id),
-            ).fetchone()
-            relation_rows = list(
-                conn.execute(
-                    """
-                    SELECT * FROM conversation_relations
-                    WHERE (source_a=? AND conversation_id_a=?)
-                       OR (source_b=? AND conversation_id_b=?)
-                    ORDER BY confidence DESC
-                    """,
-                    (source, conversation_id, source, conversation_id),
+            try:
+                assignment = conn.execute(
+                    "SELECT * FROM project_assignments WHERE source=? AND conversation_id=?",
+                    (source, conversation_id),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                assignment = None
+            try:
+                relation_rows = list(
+                    conn.execute(
+                        """
+                        SELECT * FROM conversation_relations
+                        WHERE (source_a=? AND conversation_id_a=?)
+                           OR (source_b=? AND conversation_id_b=?)
+                        ORDER BY confidence DESC
+                        """,
+                        (source, conversation_id, source, conversation_id),
+                    )
                 )
-            )
+            except sqlite3.OperationalError:
+                relation_rows = []
         related: list[dict[str, Any]] = []
         with self._lock:
             for row in relation_rows:
