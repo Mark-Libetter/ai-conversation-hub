@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-EXTRA_SOURCES = ("claude", "qoderwork", "zcode")
+EXTRA_SOURCES = ("claude", "qoderwork", "zcode", "chatgpt")
 MAX_CLAUDE_TRANSCRIPT_BYTES = 100 * 1024 * 1024
 CUSTOM_SOURCE_PREFIX = "custom_"
 CUSTOM_FORMATS = {"jsonl", "markdown", "sqlite"}
@@ -19,6 +19,7 @@ SOURCE_LABELS = {
     "claude": "Claude Code",
     "qoderwork": "QoderWork",
     "zcode": "ZCode",
+    "chatgpt": "ChatGPT",
 }
 # QoderWork 产品改名谱系（Qoder -> QoderWork -> 千问办公/QwenWork），
 # 同一台机器可能同时存在新旧两代数据目录，需要合并读取以免丢对话
@@ -202,6 +203,12 @@ def default_candidates(source: str) -> list[Path]:
         ]
     if source == "zcode":
         return [home / ".zcode" / "cli" / "db" / "db.sqlite"]
+    if source == "chatgpt":
+        return [
+            home / "Downloads" / "conversations.json",
+            home / "Documents" / "conversations.json",
+            home / "Downloads" / "chatgpt_export.json",
+        ]
     return []
 
 
@@ -345,6 +352,11 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
         if source == "zcode":
             valid = {"session", "message", "part"}.issubset(sqlite_tables(path))
             return valid, "ZCode 会话数据库" if valid else "数据库结构不匹配"
+        if source == "chatgpt":
+            files = _chatgpt_export_files(path)
+            return bool(files), (
+                f"{len(files)} 个 ChatGPT 导出文件" if files else "未找到 ChatGPT 导出（conversations.json）"
+            )
     except (OSError, sqlite3.DatabaseError):
         return False, "读取失败"
     return False, "未知来源"
@@ -422,6 +434,11 @@ def estimate_conversations(source: str, path: Path | None) -> int:
                         """
                     ).fetchone()[0]
                 )
+        if source == "chatgpt":
+            total = 0
+            for file_path in _chatgpt_export_files(path):
+                total += len(_chatgpt_conversations(file_path))
+            return total
     except (OSError, sqlite3.DatabaseError, ValueError, TypeError):
         return 0
     return 0
@@ -723,6 +740,7 @@ def _candidate_filenames(source: str) -> tuple[str, ...]:
         "claude": ("history.jsonl",),
         "qoderwork": ("agents.db",),
         "zcode": ("db.sqlite",),
+        "chatgpt": ("conversations.json", "chatgpt_export.json"),
     }.get(source, ())
 
 
@@ -1712,10 +1730,127 @@ def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
     return items, messages_by_id
 
 
+def _chatgpt_export_files(path: Path) -> list[Path]:
+    if path.is_file():
+        return [path]
+    if path.is_dir():
+        return sorted(
+            p
+            for name in ("conversations.json", "chatgpt_export.json", "*.json")
+            for p in path.glob(name)
+            if p.is_file()
+        )
+    return []
+
+
+def _chatgpt_node_text(message: dict) -> str:
+    content = message.get("content")
+    if isinstance(content, str):
+        return redact(content)
+    if not isinstance(content, dict):
+        return ""
+    parts = content.get("parts")
+    if not isinstance(parts, list):
+        return ""
+    texts: list[str] = []
+    for part in parts:
+        if isinstance(part, str):
+            texts.append(part)
+        elif isinstance(part, dict):
+            texts.append(str(part.get("text") or part.get("code") or ""))
+    return redact("\n".join(t for t in texts if t))
+
+
+def _chatgpt_conversations(file_path: Path) -> list[dict[str, Any]]:
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8", errors="ignore"))
+    except (OSError, ValueError):
+        return []
+    result: list[dict[str, Any]] = []
+    # 官方导出：{conversation_id: {title, create_time, update_time, mapping:{...}}}
+    if isinstance(data, dict):
+        for cid, conv in data.items():
+            if not isinstance(conv, dict) or not isinstance(conv.get("mapping"), dict):
+                continue
+            messages = []
+            for node in conv["mapping"].values():
+                message = (node or {}).get("message") or {}
+                role = str(message.get("role") or "")
+                if role not in {"user", "assistant"}:
+                    continue
+                text = _chatgpt_node_text(message)
+                if not text:
+                    continue
+                messages.append(
+                    {"role": role, "text": text, "timestamp": epoch(message.get("create_time"))}
+                )
+            if messages and any(m["role"] == "user" for m in messages):
+                messages.sort(key=lambda m: m["timestamp"])
+                result.append(
+                    {
+                        "id": str(cid),
+                        "title": conv.get("title") or "",
+                        "created_at": epoch(conv.get("create_time")),
+                        "updated_at": epoch(conv.get("update_time")),
+                        "messages": messages,
+                    }
+                )
+    # 插件导出：[{id/title, messages:[{role, content/text, ...}]}]
+    elif isinstance(data, list):
+        for index, conv in enumerate(data):
+            if not isinstance(conv, dict):
+                continue
+            raw_messages = conv.get("messages") or conv.get("chat") or []
+            messages = []
+            for m in raw_messages:
+                if not isinstance(m, dict):
+                    continue
+                role = normalize_role(m.get("role"))
+                text = redact(m.get("content") or m.get("text") or "")
+                if role and text:
+                    messages.append(
+                        {"role": role, "text": text, "timestamp": epoch(m.get("create_time") or m.get("timestamp"))}
+                    )
+            if messages and any(m["role"] == "user" for m in messages):
+                result.append(
+                    {
+                        "id": str(conv.get("id") or f"chatgpt-{index}"),
+                        "title": str(conv.get("title") or ""),
+                        "created_at": epoch(conv.get("create_time") or conv.get("createTime")),
+                        "updated_at": epoch(conv.get("update_time") or conv.get("updateTime")),
+                        "messages": messages,
+                    }
+                )
+    return result
+
+
+def _load_chatgpt(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    items: list[dict[str, Any]] = []
+    messages_by_id: dict[str, list[dict[str, Any]]] = {}
+    for file_path in _chatgpt_export_files(path):
+        for conv in _chatgpt_conversations(file_path):
+            messages_by_id[conv["id"]] = conv["messages"]
+            items.append(
+                conversation(
+                    "chatgpt",
+                    conv["id"],
+                    conv["title"],
+                    conv["messages"],
+                    cwd="",
+                    created_at=conv["created_at"],
+                    updated_at=conv["updated_at"],
+                    source_kind="chatgpt-export",
+                    rollout_path=file_path,
+                )
+            )
+    return items, messages_by_id
+
+
 LOADERS = {
     "claude": _load_claude,
     "qoderwork": _load_qoderwork,
     "zcode": _load_zcode,
+    "chatgpt": _load_chatgpt,
 }
 
 

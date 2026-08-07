@@ -40,8 +40,9 @@ const SOURCE_LABELS = {
   claude: "Claude Code",
   qoderwork: "QoderWork",
   zcode: "ZCode",
+  chatgpt: "ChatGPT",
 };
-const EXTRA_SOURCES = ["claude", "qoderwork", "zcode"];
+const EXTRA_SOURCES = ["claude", "qoderwork", "zcode", "chatgpt"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
@@ -207,6 +208,7 @@ const state = {
     claude: defaultFilters(),
     qoderwork: defaultFilters(),
     zcode: defaultFilters(),
+    chatgpt: defaultFilters(),
   },
 };
 

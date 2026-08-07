@@ -30,7 +30,7 @@
 
 ## 内置数据源
 
-首版内置 6 个适配器：
+首版内置 7 个适配器：
 
 | Agent | 默认发现位置 |
 |---|---|
@@ -40,6 +40,12 @@
 | **Claude Code** | `~/.claude/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db`（兼容改名后的 `QoderWork` / `QwenWorkCN` / `QwenWork` 目录，新旧数据自动合并） |
 | **ZCode** | `~/.zcode/cli/db/db.sqlite` |
+| **ChatGPT** | 网页端导出的 `conversations.json`（官方数据包或插件导出；放 ~/Downloads 自动发现，或在设置里指定路径） |
+
+**网页端其它助手（千问 / Gemini / Claude 网页版等）**：用浏览器导出插件或油猴脚本把对话导出为
+Markdown / JSON，再作为自定义源接入即可，无需改代码。可参考
+[chatgpt-exporter](https://github.com/pionxzh/chatgpt-exporter)、
+[AI-Chat-Md-Export](https://github.com/YunAsimov/AI-Chat-Md-Export)。
 
 **想接入其它 agent？** 支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
