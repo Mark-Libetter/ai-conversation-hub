@@ -40,7 +40,7 @@
 
 之所以做它，是因为我自己同时用好几个 AI 编程助手，经常想不起"之前在哪聊过这个问题"，翻遍各个客户端也找不到。既然这些助手帮我写了那么多代码，那也请它们帮我解决这个麻烦吧。
 
-顺便一提，这是作者第一个 vibe coding 项目——靠和 AI 对话一点点搭起来的新手作品，有 bug 欢迎在 [Issues](https://github.com/Mark-Libetter/ai-conversation-hub/issues) 提，感谢。
+顺便一提，这是作者第一个 vibe coding 项目，有 bug 欢迎在 [Issues](https://github.com/Mark-Libetter/ai-conversation-hub/issues) 提，感谢。
 
 ## 内置数据源
 
