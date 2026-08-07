@@ -39,6 +39,9 @@ for _stream in (sys.stdout, sys.stderr):
 PORT = os.environ.get("CONVERSATION_HUB_PORT", "8765")
 BASE = f"http://127.0.0.1:{PORT}"
 
+# 与 server.py 的 APP_VERSION 保持一致（手动同步：单点定义，避免散落多处写死）
+VERSION = "0.1.7"
+
 
 # ---------------------------------------------------------------- HTTP 层
 def hub_get(path: str, **params) -> dict:
@@ -238,6 +241,8 @@ def mcp_serve() -> None:
         length = int(headers.get(b"content-length", 0))
         if length <= 0:
             return None
+        if length > 10_000_000:  # 防异常 stdin 卡死/OOM，10MB 足够任何合法 MCP 消息
+            return None
         return json.loads(stdin.read(length).decode("utf-8"))
 
     def write_message(obj):
@@ -257,7 +262,7 @@ def mcp_serve() -> None:
                 "result": {
                     "protocolVersion": (msg.get("params") or {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "ai-conversation-hub", "version": "0.1.6"},
+                    "serverInfo": {"name": "ai-conversation-hub", "version": VERSION},
                 },
             })
         elif method == "notifications/initialized":
@@ -266,14 +271,22 @@ def mcp_serve() -> None:
             write_message({"jsonrpc": "2.0", "id": msg_id, "result": {"tools": MCP_TOOLS}})
         elif method == "tools/call":
             params = msg.get("params") or {}
-            try:
-                text = mcp_call_tool(params.get("name") or "", params.get("arguments") or {})
+            tool_name = params.get("name") or ""
+            known = {t["name"] for t in MCP_TOOLS}
+            if tool_name not in known:
+                # 未知工具属协议级错误，按 JSON-RPC error 返回（非业务异常的 isError）
                 write_message({"jsonrpc": "2.0", "id": msg_id,
-                               "result": {"content": [{"type": "text", "text": text}]}})
-            except Exception as exc:  # noqa: BLE001 —— MCP 要求错误以结果形式返回
-                write_message({"jsonrpc": "2.0", "id": msg_id,
-                               "result": {"content": [{"type": "text", "text": "ERROR: %s" % exc}],
-                                          "isError": True}})
+                               "error": {"code": -32601,
+                                         "message": "unknown tool: %s" % tool_name}})
+            else:
+                try:
+                    text = mcp_call_tool(tool_name, params.get("arguments") or {})
+                    write_message({"jsonrpc": "2.0", "id": msg_id,
+                                   "result": {"content": [{"type": "text", "text": text}]}})
+                except Exception as exc:  # noqa: BLE001 —— MCP 要求工具执行错误以 result.isError 返回
+                    write_message({"jsonrpc": "2.0", "id": msg_id,
+                                   "result": {"content": [{"type": "text", "text": "ERROR: %s" % exc}],
+                                              "isError": True}})
         elif method == "ping":
             write_message({"jsonrpc": "2.0", "id": msg_id, "result": {}})
         elif msg_id is not None:
