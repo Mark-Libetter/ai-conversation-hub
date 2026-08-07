@@ -2287,11 +2287,23 @@ async function assignToProject(projectId) {
 
 function renderAssignList() {
   const box = $("#assignProjectList");
+  const stLabels = { active: "进行中", done: "已完成", paused: "暂停" };
+  const stClass = { active: "st-active", done: "st-done", paused: "st-paused" };
   box.innerHTML = state.projects.length
-    ? state.projects.map((p) => `
+    ? state.projects.map((p) => {
+        const st = p.status || "active";
+        return `
         <button class="assign-project-row" type="button" data-assign="${escapeHtml(p.id)}">
-          <strong>${escapeHtml(p.name)}</strong><span class="muted">${p.count} 个对话</span>
-        </button>`).join("")
+          <span class="assign-row-main">
+            <strong>${escapeHtml(p.name)}</strong>
+            <span class="muted">${p.count} 个对话</span>
+          </span>
+          <span class="assign-row-side">
+            <span class="proj-status-pill ${stClass[st]}">${stLabels[st]}</span>
+            <span class="assign-row-go">归入 →</span>
+          </span>
+        </button>`;
+      }).join("")
     : `<p class="muted">还没有项目，先在下方新建一个。</p>`;
 }
 
@@ -2301,6 +2313,8 @@ $("#addToProjectButton").addEventListener("click", async () => {
     const data = await api("/api/projects");
     state.projects = data.projects || [];
     renderAssignList();
+    const hint = $("#assignDialogHint");
+    if (hint) hint.textContent = `已选 ${state.checked.size} 个对话。点击一个项目立即归入；或在下方新建项目并归入。`;
     $("#projectAssignDialog").showModal();
   } catch (error) { showToast(error.message); }
 });

@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-        <link rel="stylesheet" href="/app.css?v=lite24">
+        <link rel="stylesheet" href="/app.css?v=lite25">
   </head>
   <body>
     <div class="app-frame">
@@ -469,18 +469,20 @@
       </div>
     </dialog>
 
-    <dialog id="projectAssignDialog" class="settings-dialog" aria-labelledby="projectAssignTitle">
-      <div class="dialog-body">
-        <h3 id="projectAssignTitle">归入项目</h3>
-        <p class="muted">点击一个项目立即归入；或新建一个项目并归入。</p>
+    <dialog id="projectAssignDialog" class="settings-dialog assign-dialog" aria-labelledby="projectAssignTitle">
+      <div class="settings-dialog-inner">
+        <div class="settings-dialog-head">
+          <div><p class="eyebrow">PROJECT</p><h2 id="projectAssignTitle">归入项目</h2></div>
+          <button id="closeAssignButton" class="button ghost" type="button">关闭</button>
+        </div>
+        <p class="muted" id="assignDialogHint">点击一个项目立即归入；或新建一个项目并归入。</p>
         <div id="assignProjectList" class="assign-project-list"></div>
         <div class="assign-create">
-          <input id="assignNewName" class="input" type="text" placeholder="新项目名字" maxlength="80">
-          <input id="assignNewDesc" class="input" type="text" placeholder="说明（可选）" maxlength="2000">
-          <button id="assignCreateButton" class="button primary" type="button">创建并归入</button>
-        </div>
-        <div class="dialog-actions">
-          <button id="closeAssignButton" class="button ghost" type="button">关闭</button>
+          <label class="dialog-field"><span>新项目名字</span><input id="assignNewName" class="input" type="text" placeholder="给这堆对话起个名" maxlength="80"></label>
+          <label class="dialog-field"><span>说明（可选）</span><input id="assignNewDesc" class="input" type="text" placeholder="这个项目是关于什么的…" maxlength="2000"></label>
+          <div class="dialog-actions assign-create-actions">
+            <button id="assignCreateButton" class="button primary" type="button">创建并归入</button>
+          </div>
         </div>
       </div>
     </dialog>
@@ -501,6 +503,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite25" defer></script>
+    <script src="/app.js?v=lite26" defer></script>
   </body>
 </html>
