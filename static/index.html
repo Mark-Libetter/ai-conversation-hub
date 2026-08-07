@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-        <link rel="stylesheet" href="/app.css?v=lite26">
+        <link rel="stylesheet" href="/app.css?v=lite27">
   </head>
   <body>
     <div class="app-frame">
@@ -375,7 +375,19 @@
             <option value="">未设置状态</option><option value="todo">待继续</option><option value="done">已完成</option>
             <option value="reference">重要参考</option><option value="archive_candidate">可归档候选</option>
           </select>
-          <input class="tags-input" type="text" placeholder="标签，用逗号分隔">
+          <div class="tags-field">
+            <div class="tags-field-head">
+              <span class="tags-field-label">标签</span>
+              <span class="tags-help" tabindex="0">?
+                <span class="tags-help-pop">输入后按回车或逗号确认；可从下拉中选择已有标签；点标签上的 × 删除。单个标签最长 60 字，最多 20 个。修改后自动保存。</span>
+              </span>
+            </div>
+            <div class="tags-editor">
+              <span class="tags-chips"></span>
+              <input class="tags-input" type="text" placeholder="输入标签，回车确认" autocomplete="off">
+              <div class="tags-suggest" hidden></div>
+            </div>
+          </div>
           <textarea class="note-input" rows="4" placeholder="记录结论、下一步或为什么值得保留…"></textarea>
           <button class="button secondary save-note" type="button">保存备注</button>
         </section>
@@ -510,6 +522,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite27" defer></script>
+    <script src="/app.js?v=lite28" defer></script>
   </body>
 </html>

@@ -1557,6 +1557,40 @@ function renderList() {
   $("#loadMoreButton").hidden = state.items.length >= state.total;
 }
 
+function editorTags(root) {
+  return [...root.querySelectorAll(".tags-chips .tag-edit-chip")].map((c) => c.dataset.tag);
+}
+
+function renderTagEditor(root, tags) {
+  const box = root.querySelector(".tags-chips");
+  if (!box) return;
+  box.innerHTML = tags.map((t) =>
+    `<span class="tag-edit-chip" data-tag="${escapeHtml(t)}">${escapeHtml(t)}<button type="button" class="tag-chip-x" data-remove-tag="${escapeHtml(t)}" title="删除标签">×</button></span>`
+  ).join("");
+}
+
+function hideTagSuggest(root) {
+  const box = root.querySelector(".tags-suggest");
+  if (box) { box.hidden = true; box.innerHTML = ""; }
+}
+
+function showTagSuggest(root) {
+  const input = root.querySelector(".tags-input");
+  const box = root.querySelector(".tags-suggest");
+  if (!input || !box) return;
+  const q = input.value.trim().toLowerCase();
+  const have = new Set(editorTags(root));
+  const all = (state.summary && state.summary.tags) || [];
+  const matches = all
+    .filter(([name]) => !have.has(name) && (!q || name.toLowerCase().includes(q)))
+    .slice(0, 8);
+  if (!matches.length) { hideTagSuggest(root); return; }
+  box.innerHTML = matches.map(([name, count]) =>
+    `<button type="button" class="tags-suggest-item" data-suggest-tag="${escapeHtml(name)}">${escapeHtml(name)}<span class="muted">· ${count}</span></button>`
+  ).join("");
+  box.hidden = false;
+}
+
 async function openDetail(source, id) {
   state.selected = { source, id };
   setDetailOpen(true);
@@ -1628,7 +1662,7 @@ function renderDetail(data) {
   status.value = item.user_status || "";
   const projectSelect = fragment.querySelector(".project-assignment");
   if (projectSelect) projectSelect.parentElement.style.display = "none";
-  fragment.querySelector(".tags-input").value = (item.tags || []).join(", ");
+  renderTagEditor(detailRoot, item.tags || []);
   fragment.querySelector(".note-input").value = item.note || "";
   const relatedBlock = fragment.querySelector(".related-block");
   const relatedItems = data.related_conversations || [];
@@ -1794,28 +1828,104 @@ function renderDetail(data) {
     }
   });
   fragment.querySelector(".save-note").addEventListener("click", () => saveDetail(detailRoot, item, false));
+
+  // 标签编辑器：输入/回车/逗号确认，下拉候选，点 × 删除；改动即自动保存
+  const persistTags = () => saveDetail(detailRoot, item, true, true);
+  const addEditorTag = (value) => {
+    const tag = String(value || "").trim().replace(/[,，]/g, "").slice(0, 60);
+    const input = detailRoot.querySelector(".tags-input");
+    if (!tag) { if (input) input.value = ""; return; }
+    const tags = editorTags(detailRoot);
+    if (tags.includes(tag)) {
+      if (input) input.value = "";
+      hideTagSuggest(detailRoot);
+      return;
+    }
+    if (tags.length >= 20) { showToast("最多 20 个标签"); return; }
+    tags.push(tag);
+    renderTagEditor(detailRoot, tags);
+    if (input) { input.value = ""; input.focus(); }
+    hideTagSuggest(detailRoot);
+    persistTags();
+  };
+  const tagsInput = fragment.querySelector(".tags-input");
+  if (tagsInput) {
+    tagsInput.addEventListener("input", () => {
+      const raw = tagsInput.value;
+      if (/[,，]/.test(raw)) {
+        const parts = raw.split(/[,，]/);
+        tagsInput.value = parts.pop() || "";
+        parts.forEach((p) => addEditorTag(p));
+      }
+      showTagSuggest(detailRoot);
+    });
+    tagsInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const first = detailRoot.querySelector(".tags-suggest-item");
+        if (tagsInput.value.trim()) addEditorTag(tagsInput.value);
+        else if (first) addEditorTag(first.dataset.suggestTag);
+      } else if (event.key === "Escape") {
+        hideTagSuggest(detailRoot);
+      } else if (event.key === "Backspace" && !tagsInput.value) {
+        const tags = editorTags(detailRoot);
+        if (tags.length) {
+          renderTagEditor(detailRoot, tags.slice(0, -1));
+          persistTags();
+        }
+      }
+    });
+    tagsInput.addEventListener("blur", () => {
+      setTimeout(() => hideTagSuggest(detailRoot), 150);
+    });
+  }
+  fragment.querySelector(".tags-editor")?.addEventListener("mousedown", (event) => {
+    const pick = event.target.closest("[data-suggest-tag]");
+    if (pick) { event.preventDefault(); addEditorTag(pick.dataset.suggestTag); return; }
+    const del = event.target.closest("[data-remove-tag]");
+    if (del) {
+      event.preventDefault();
+      renderTagEditor(detailRoot, editorTags(detailRoot).filter((t) => t !== del.dataset.removeTag));
+      persistTags();
+    }
+  });
+
+  // 备注自动保存：只读取不回写，不打断输入框原生的 Ctrl+Z 撤销栈
+  const noteInputEl = fragment.querySelector(".note-input");
+  let noteAutoTimer = 0;
+  if (noteInputEl) {
+    noteInputEl.addEventListener("input", () => {
+      clearTimeout(noteAutoTimer);
+      const ss = detailRoot.querySelector(".save-state");
+      if (ss) ss.textContent = "编辑中…";
+      noteAutoTimer = setTimeout(() => saveDetail(detailRoot, item, true, true), 900);
+    });
+  }
+  // 状态切换也自动保存
+  fragment.querySelector(".user-status")?.addEventListener("change", () => saveDetail(detailRoot, item, true, true));
+
   detailPane.replaceChildren(fragment);
 }
 
-async function saveDetail(root, item, quiet) {
+async function saveDetail(root, item, quiet, auto = false) {
   const noteInput = root.querySelector(".note-input");
-  const tagsInput = root.querySelector(".tags-input");
+  const chipsBox = root.querySelector(".tags-chips");
   const statusSelect = root.querySelector(".user-status");
   const payload = {
     source: item.source,
     id: item.id,
     note: noteInput ? noteInput.value : (item.note || ""),
-    tags: tagsInput
-      ? tagsInput.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean)
+    tags: chipsBox
+      ? [...chipsBox.querySelectorAll(".tag-edit-chip")].map((c) => c.dataset.tag)
       : (item.tags || []),
     user_status: statusSelect ? statusSelect.value : (item.user_status || ""),
     favorite: item.favorite,
   };
   const saveState = root.querySelector(".save-state");
-  if (saveState) saveState.textContent = "保存中…";
+  if (saveState) saveState.textContent = auto ? "自动保存中…" : "保存中…";
   try {
     await api("/api/note", { method: "POST", body: JSON.stringify(payload) });
-    saveState.textContent = "已保存";
+    saveState.textContent = auto ? "已自动保存" : "已保存";
     Object.assign(item, payload);
     const cached = state.items.find((candidate) => candidate.source === item.source && candidate.id === item.id);
     if (cached) Object.assign(cached, payload);
