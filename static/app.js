@@ -1239,7 +1239,7 @@ function setView(view, { sync = true } = {}) {
   }
   if (state.view === "settings") {
     loadSourceHealth().catch((error) => showToast(error.message));
-    loadUpdateConfig().catch((error) => showToast(error.message));
+    loadVersionInfo().catch((error) => showToast(error.message));
   }
   if (state.view === "assets") {
     loadAssets().catch((error) => showToast(error.message));
@@ -1284,11 +1284,11 @@ async function loadSourceHealth() {
   `).join("");
 }
 
-async function loadUpdateConfig() {
+async function loadVersionInfo() {
   try {
-    const config = await api("/api/update");
+    const health = await api("/api/health");
     const el = $("#updateState");
-    if (el) el.textContent = `当前版本 ${config.current_version}`;
+    if (el) el.textContent = `当前版本 ${health.app_version}`;
   } catch {}
 }
 
@@ -1608,6 +1608,8 @@ function renderDetail(data) {
   detailPane.dataset.source = item.source;
   detailPane.dataset.conversationId = item.id;
   const fragment = $("#detailTemplate").content.cloneNode(true);
+  // replaceChildren 会清空 fragment，先拿到元素节点引用供后续保存使用
+  const detailRoot = fragment.querySelector(".detail-inner");
   fragment.querySelector(".source-line").textContent = [
     conversationSourceLabel(item),
     item.native_project ? `原生项目：${item.native_project}` : item.workspace,
@@ -1792,7 +1794,7 @@ function renderDetail(data) {
     item.favorite = !item.favorite;
     favoriteButton.textContent = item.favorite ? "★" : "☆";
     favoriteButton.classList.toggle("active", item.favorite);
-    await saveDetail(fragment, item, true);
+    await saveDetail(detailRoot, item, true);
   });
   fragment.querySelector(".copy-id").addEventListener("click", async () => {
     await navigator.clipboard.writeText(item.id);
@@ -1822,7 +1824,7 @@ function renderDetail(data) {
       button.disabled = false;
     }
   });
-  fragment.querySelector(".save-note").addEventListener("click", () => saveDetail(fragment, item, false));
+  fragment.querySelector(".save-note").addEventListener("click", () => saveDetail(detailRoot, item, false));
   detailPane.replaceChildren(fragment);
 }
 
@@ -2146,48 +2148,6 @@ $("#refreshDataButton").addEventListener("click", async (event) => {
     showToast(error.message);
   } finally {
     button.disabled = false;
-  }
-});
-
-async function loadCompanion() {
-  const data = await api("/api/companion");
-  const checkbox = $("#companionEnabled");
-  if (checkbox) checkbox.checked = Boolean(data.enabled);
-  const stateEl = $("#companionState");
-  if (stateEl) {
-    stateEl.textContent = data.enabled
-      ? `已开启 · 手机连接 http://${data.lan_ip}:${data.port} · 配对码 ${data.token}`
-      : "未开启";
-  }
-}
-
-$("#companionEnabled")?.addEventListener("change", async (event) => {
-  try {
-    const data = await api("/api/companion", {
-      method: "POST",
-      body: JSON.stringify({ enabled: event.target.checked }),
-    });
-    const stateEl = $("#companionState");
-    stateEl.textContent = data.enabled
-      ? `已开启 · 手机连接 http://${data.lan_ip}:${data.port} · 配对码 ${data.token}`
-      : "未开启";
-    showToast(data.enabled ? "伴随端已开启" : "伴随端已关闭");
-  } catch (error) {
-    showToast(error.message);
-  }
-});
-
-$("#companionRegenButton")?.addEventListener("click", async () => {
-  try {
-    const data = await api("/api/companion", {
-      method: "POST",
-      body: JSON.stringify({ regenerate_token: true }),
-    });
-    const stateEl = $("#companionState");
-    if (data.enabled) stateEl.textContent = `已开启 · 手机连接 http://${data.lan_ip}:${data.port} · 配对码 ${data.token}`;
-    showToast("配对码已更换");
-  } catch (error) {
-    showToast(error.message);
   }
 });
 
@@ -2939,7 +2899,9 @@ async function boot() {
   };
   try {
     _log("启动中…");
-    applyTheme(currentTheme(), { persist: false });
+    let savedTheme = "";
+    try { savedTheme = localStorage.getItem(THEME_KEY) || ""; } catch {}
+    applyTheme(THEMES[savedTheme] ? savedTheme : currentTheme(), { persist: false });
     initSidebarCollapse();
     updateSmartToggleButton();
     setDetailOpen(false);

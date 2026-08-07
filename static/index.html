@@ -1,12 +1,21 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="archive">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/app.css?v=lite20">
+        <script>
+      // 首屏前套用已保存皮肤，避免主题加载导致的界面闪变
+      try {
+        var __saved = localStorage.getItem("ai-hub-theme");
+        var __themes = ["dream-glass", "violet-night", "warm-paper", "terminal", "archive"];
+        document.documentElement.dataset.theme =
+          __themes.indexOf(__saved) >= 0 ? __saved : "archive";
+      } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="/app.css?v=lite21">
   </head>
   <body>
     <div class="app-frame">
@@ -312,7 +321,7 @@
                 <div class="settings-card-actions">
                   <a class="button secondary" href="https://github.com/Mark-Libetter/ai-conversation-hub/releases" target="_blank" rel="noopener">打开下载页</a>
                 </div>
-                <div id="updateState" class="muted">当前版本 0.20.4</div>
+                <div id="updateState" class="muted">正在读取当前版本…</div>
               </section>
               <section class="settings-card">
                 <span class="settings-index">04</span>
