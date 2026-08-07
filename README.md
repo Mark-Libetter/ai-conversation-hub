@@ -38,13 +38,9 @@
 
 ## 关于这个项目
 
-这是一个**编程新手**的**第一个 vibe coding 项目**——我基本不懂代码，全靠和 AI 编程助手对话，一点点把这个工具"聊"了出来。
-
 之所以做它，是因为我自己同时用好几个 AI 编程助手，经常想不起"之前在哪聊过这个问题"，翻遍各个客户端也找不到。既然这些助手帮我写了那么多代码，那也请它们帮我解决这个麻烦吧。
 
-- 🔰 如果有 bug，请多包涵，这是新手作品，欢迎在 [Issues](https://github.com/Mark-Libetter/ai-conversation-hub/issues) 里告诉我
-- 💬 如果你也在同时用好几个 AI 编程助手，欢迎试用、提意见、提需求
-- 🤝 这对我是一段珍贵的学习经历，希望能帮到有同样困扰的人
+顺便一提，这是作者第一个 vibe coding 项目——靠和 AI 对话一点点搭起来的新手作品，有 bug 欢迎在 [Issues](https://github.com/Mark-Libetter/ai-conversation-hub/issues) 提，感谢。
 
 ## 内置数据源
 
