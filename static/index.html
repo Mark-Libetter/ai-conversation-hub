@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" href="data:,">
-        <link rel="stylesheet" href="/app.css?v=lite27">
+        <link rel="stylesheet" href="/app.css?v=lite28">
   </head>
   <body>
     <div class="app-frame">
@@ -130,6 +130,9 @@
                     <option value="done">已完成</option>
                     <option value="reference">重要参考</option>
                     <option value="archive_candidate">可归档候选</option>
+                  </select>
+                  <select id="tagFilter" aria-label="标签">
+                    <option value="">全部标签</option>
                   </select>
                   <details id="moreFilters" class="more-filters">
                     <summary>更多筛选</summary>
@@ -371,10 +374,13 @@
         </section>
         <section class="note-block">
           <div class="section-heading"><h3>我的管理信息</h3><span class="save-state muted"></span></div>
-          <select class="user-status" aria-label="自定义状态">
-            <option value="">未设置状态</option><option value="todo">待继续</option><option value="done">已完成</option>
-            <option value="reference">重要参考</option><option value="archive_candidate">可归档候选</option>
-          </select>
+          <div class="note-field">
+            <span class="note-field-label">状态</span>
+            <select class="user-status" aria-label="自定义状态">
+              <option value="">未设置状态</option><option value="todo">待继续</option><option value="done">已完成</option>
+              <option value="reference">重要参考</option><option value="archive_candidate">可归档候选</option>
+            </select>
+          </div>
           <div class="tags-field">
             <div class="tags-field-head">
               <span class="tags-field-label">标签</span>
@@ -388,8 +394,10 @@
               <div class="tags-suggest" hidden></div>
             </div>
           </div>
-          <textarea class="note-input" rows="4" placeholder="记录结论、下一步或为什么值得保留…"></textarea>
-          <button class="button secondary save-note" type="button">保存备注</button>
+          <div class="note-field">
+            <span class="note-field-label">备注</span>
+            <textarea class="note-input" rows="4" placeholder="记录结论、下一步或为什么值得保留…（自动保存，支持 Ctrl+Z 撤销）"></textarea>
+          </div>
         </section>
         <section class="related-block" hidden>
           <div class="section-heading"><h3>跨 Agent 相关对话</h3><span class="related-count muted"></span></div>
@@ -522,6 +530,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite28" defer></script>
+    <script src="/app.js?v=lite29" defer></script>
   </body>
 </html>

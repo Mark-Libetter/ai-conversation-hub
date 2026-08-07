@@ -656,6 +656,18 @@ function renderWorkspaceSummary() {
     state.nativeProject = "all";
     state.filters[state.source].nativeProject = "all";
   }
+  const tagSelect = $("#tagFilter");
+  if (tagSelect) {
+    const tagRows = data.tags || [];
+    tagSelect.innerHTML = `<option value="">全部标签</option>` +
+      tagRows.map(([name, count]) =>
+        `<option value="${escapeHtml(name)}">${escapeHtml(name)} · ${count}</option>`
+      ).join("");
+    tagSelect.value = [...tagSelect.options].some((option) => option.value === state.tag)
+      ? state.tag
+      : "";
+    if (tagSelect.value !== state.tag) state.tag = "";
+  }
   renderTagChips();
 
   document.querySelectorAll("#quickRanges [data-range]").forEach((button) => {
@@ -1183,6 +1195,10 @@ function syncControls() {
   $("#searchInput").value = state.query;
   $("#workspaceFilter").value = state.workspace;
   $("#nativeProjectFilter").value = state.nativeProject;
+  const tagSelectEl = $("#tagFilter");
+  if (tagSelectEl) {
+    tagSelectEl.value = [...tagSelectEl.options].some((o) => o.value === state.tag) ? state.tag : "";
+  }
   const moreFilters = $("#moreFilters");
   if (moreFilters) {
     const activeCount = (state.workspace !== "all" ? 1 : 0) + (state.nativeProject !== "all" ? 1 : 0);
@@ -1827,7 +1843,7 @@ function renderDetail(data) {
       button.disabled = false;
     }
   });
-  fragment.querySelector(".save-note").addEventListener("click", () => saveDetail(detailRoot, item, false));
+  fragment.querySelector(".save-note")?.addEventListener("click", () => saveDetail(detailRoot, item, false));
 
   // 标签编辑器：输入/回车/逗号确认，下拉候选，点 × 删除；改动即自动保存
   const persistTags = () => saveDetail(detailRoot, item, true, true);
@@ -2618,10 +2634,18 @@ $("#nativeProjectFilter").addEventListener("change", (event) => {
   resetAndLoad();
 });
 
+$("#tagFilter").addEventListener("change", (event) => {
+  state.tag = event.target.value;
+  renderTagChips();
+  resetAndLoad();
+});
+
 $("#tagChips").addEventListener("click", (event) => {
   const chip = event.target.closest("[data-tag]");
   if (!chip) return;
   state.tag = state.tag === chip.dataset.tag ? "" : chip.dataset.tag;
+  const tagSelectSync = $("#tagFilter");
+  if (tagSelectSync) tagSelectSync.value = state.tag;
   renderTagChips();
   resetAndLoad();
 });
