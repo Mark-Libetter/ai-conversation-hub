@@ -28,3 +28,6 @@ dist/
 
 # 运行时实例信息（端口复用）
 instance.json
+
+# 交接文档（仅供二次检查，不入库）
+HANDOFF.md
