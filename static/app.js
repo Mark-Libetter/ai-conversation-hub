@@ -1061,7 +1061,7 @@ function renderDaily(data) {
     `模板 ${templateName}`,
     data.is_stale ? "对话有更新，建议重新生成" : "",
   ].filter(Boolean);
-  return `<div class="daily-head">
+  const html = `<div class="daily-head">
       <span class="muted">生成于 ${dateTime(data.generated_at)}</span>
     </div>
     ${dailySummaryCardHtml(data)}
@@ -1168,6 +1168,7 @@ function renderDaily(data) {
     });
   }
   if (data.warning) showToast(data.warning);
+  return html;
 }
 
 async function loadDaily() {
