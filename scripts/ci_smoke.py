@@ -55,6 +55,37 @@ def main() -> int:
         assert source_adapters.default_candidates("zcode"), "zcode candidate missing"
         assert source_adapters.default_candidates("qoderwork"), "qoderwork candidate missing"
         print("PASS: adapter discovery helpers return candidates on", sys.platform)
+
+        # macOS 路径形式验证：确认 default_candidates 在 darwin 上走 ~/Library 路径
+        if sys.platform == "darwin":
+            cands = source_adapters.default_candidates("qoderwork")
+            joined = " ".join(str(p) for p in cands)
+            assert "Library" in joined or "Application Support" in joined, \
+                f"macOS candidates should use ~/Library/Application Support, got: {cands}"
+            print("PASS: macOS path form (~/Library/Application Support) confirmed")
+
+        # 深入端点测试：验证 server 不只是活着，而是各只读 API 都能正常响应
+        import json as _json
+        base = f"http://127.0.0.1:{PORT}"
+
+        def _get(path):
+            with urllib.request.urlopen(base + path, timeout=5) as r:
+                return _json.loads(r.read().decode("utf-8"))
+
+        src = _get("/api/sources")
+        # /api/sources 可能是 list 或 dict（含 sources/items 键），都能处理即可
+        src_items = src if isinstance(src, list) else (src.get("sources") or src.get("items") or [])
+        print(f"PASS: /api/sources responded with {len(src_items)} source(s)")
+
+        srch = _get("/agent/search?q=test&limit=1")
+        assert "results" in srch and "total" in srch, "/agent/search missing keys"
+        print(f"PASS: /agent/search responded, total={srch['total']}")
+
+        daily = _get("/agent/daily")
+        assert "day" in daily, "/agent/daily missing 'day'"
+        print(f"PASS: /agent/daily responded, day={daily['day']}")
+
+        print("ALL PASS on", sys.platform)
         return 0
     finally:
         proc.terminate()
