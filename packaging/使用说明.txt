@@ -7,20 +7,27 @@ AI Conversation Hub · 使用说明
 3. 首次打开浏览器后，在界面里确认/选择你的 AI 助手数据源，即可开始搜索和回顾。
 
 二、安装（macOS）
-1. 完整解压压缩包。
-2. 运行文件夹里的 AIConversationHub；若提示无权限，
-   打开终端执行：chmod +x AIConversationHub  再运行。
+1. 把整个压缩包【完整解压】到一个文件夹。
+2. 首次运行，有两种方式（任选其一）：
+   方式 A（推荐，图形化引导）：双击文件夹里的 start-mac.command，
+        它会弹出提示框，一步步教你打开 App，全程不用碰终端。
+   方式 B（手动）：右键点击 AIConversationHub.app →「打开」→「仍要打开」。
+        （首次需要这样操作一次来通过 macOS 安全检查，以后双击就能直接用。）
+3. 首次打开浏览器后，在界面里确认/选择你的 AI 助手数据源即可。
 
 三、常见问题
 - 双击没反应？
   · 确认已【解压】而不是在压缩包里直接运行；
-  · 确认 _internal 文件夹和 AIConversationHub.exe 在同一目录；
-  · 可能被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任。
+  · Windows：确认 _internal 文件夹和 AIConversationHub.exe 在同一目录；
+    可能被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任。
+  · macOS：首次需要「右键 → 打开 → 仍要打开」，直接双击会被系统拦。
+    若右键打开也没反应，双击 start-mac.command 跟着提示走。
 - 会上传我的对话吗？
   · 不会。软件只在本机运行，服务只绑定 127.0.0.1，原始对话只读、不上传。
 - 数据存在哪？
   · 你的收藏/备注/项目等管理信息存在本机用户目录，与原始对话分开。
 
 四、卸载
-直接删除解压文件夹即可；如需清理管理数据，删除用户目录下的
-AIConversationHub 文件夹（Windows 在 %LOCALAPPDATA% 下）。
+直接删除解压文件夹即可；如需清理管理数据：
+· Windows：删除 %LOCALAPPDATA%\AIConversationHub 文件夹
+· macOS：删除 ~/Library/Application Support/AIConversationHub 文件夹

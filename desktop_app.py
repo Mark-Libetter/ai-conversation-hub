@@ -154,15 +154,29 @@ def main() -> None:
     try:
         launch()
     except Exception as exc:  # 让双击失败时窗口停住、能看到原因
-        print(f"\n启动失败：{exc}")
-        print("排查提示：")
-        print("  1. 请先把整个文件夹从压缩包完整解压，再运行 AIConversationHub.exe；")
-        print("  2. 若被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任；")
-        print("  3. 确认 _internal 文件夹与 AIConversationHub.exe 在同一目录。")
+        _show_error(exc)
+
+
+def _show_error(exc: Exception) -> None:
+    """启动失败时显示错误信息：有控制台走 print，无控制台(--windowed)弹图形对话框。"""
+    msg = f"启动失败：{exc}\n\n排查提示：\n  1. 请先把整个文件夹从压缩包完整解压后再运行；\n  2. 若被杀毒软件拦截，请添加信任；\n  3. 确认程序文件完整（_internal 文件夹与主程序在同一目录）。"
+    if sys.stdout:  # 有控制台（Windows 控制台版 / 源码运行）
+        print("\n" + msg)
         try:
             input("\n按回车键退出…")
         except (EOFError, KeyboardInterrupt):
             pass
+    else:  # 无控制台（macOS --windowed .app）：弹图形对话框，否则用户看不到任何错误
+        try:
+            import subprocess
+            escaped = msg.replace('"', '\\"').replace("\\", "\\\\")
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display dialog "{escaped}" with title "AI Conversation Hub 启动失败" buttons {{"退出"}} default button 1 with icon stop'],
+                timeout=120,
+            )
+        except Exception:
+            pass  # 连 osascript 都失败时，只能静默退出
 
 
 if __name__ == "__main__":
