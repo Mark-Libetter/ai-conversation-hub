@@ -2,18 +2,18 @@
 
 [中文](README_ZH.md) | **English**
 
-> A read-only aggregator that pulls chat history from multiple AI coding agents
-> into one searchable timeline — so you can find that conversation you had last week.
-> Local-first, zero dependencies, never modifies your original data.
+> Turn scattered AI conversations into one workspace you can search, review, and reuse.
+> Local-first, zero dependencies, read-only to your original data.
 
 ## What it does
 
-If you use several AI coding assistants (Codex, Hermes, WorkBuddy, QoderWork, Claude Code, ZCode), your conversations are scattered across each one — finding "where did I discuss this before?" is painful. This tool pulls them all into a single local interface so you can:
+If you work across several AI coding assistants (Codex, Hermes, WorkBuddy, QoderWork, Claude Code, ZCode), your conversations live in each one separately — so "where did I discuss this before?" and "how far did that project get?" are hard to answer. The Hub brings them into one local workspace for three things:
 
-- **Cross-source search**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`)
-- **Daily review**: a fact-based recap of the day — overview stats, project progress grouped by workspace, your own status markers (generated offline, no model calls)
-- **Conversation detail**: read full content, add favorites, tags (dropdown suggestions + auto-save), notes; export to Markdown / JSONL
-- **Project archiving**: check related conversations into named projects with status, notes, and task lists
+- **Find**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`) — so last week's discussion is one query away
+- **Review**: a fact-based daily recap — overview stats, project progress grouped by workspace, your own status markers (generated offline, no model calls) — so you close each day knowing what actually got done
+- **Organize**: check related conversations into named projects with status, notes, and task lists — so the work you did turns into something you can revisit
+
+> Think of it less as a history viewer, and more as a personal workspace memory built on top of your scattered AI conversations.
 
 ## Screenshots
 
@@ -211,7 +211,7 @@ L2 summary-level (conversation overview, cheap) → L3 full-text (`budget` contr
 ## FAQ
 
 **What problem does this solve?**
-AI coding assistants (Codex CLI, Claude Code, Hermes, ZCode, etc.) store their conversation logs in separate directories, with no unified way to search or review them. This tool aggregates them read-only into one local dashboard: cross-agent full-text search, daily work review, project archiving, tags/favorites, and Markdown export.
+When you use several AI coding assistants (Codex CLI, Claude Code, Hermes, ZCode, etc.), each stores its conversation logs in a separate directory, with no shared place to search, review, or build on them. The Hub brings them into one local workspace: cross-agent search, daily work review, project memory, tags/favorites, and Markdown export — so the work you do across assistants doesn't stay scattered and forgotten.
 
 **Which AI coding assistants are supported?**
 6 built-in adapters: Codex CLI, Claude Code, Hermes, ZCode, QoderWork, WorkBuddy. Other agents (including exported ChatGPT / Gemini chat logs) can be connected via JSONL / Markdown / SQLite custom sources — no code changes needed.
