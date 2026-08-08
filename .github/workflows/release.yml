@@ -91,9 +91,34 @@ jobs:
             assets/AIConversationHub-macOS/AIConversationHub-macOS.zip
           generate_release_notes: true
           body: |
-            一键下载、解压即用，无需安装 Python。
+            把多个 AI 编程助手（Codex / Claude Code / Hermes / ZCode / QoderWork / WorkBuddy）的对话汇聚成一个可搜索的本地时间线。一键下载、解压即用，无需安装 Python。
 
-            - **AIConversationHub-Windows.zip**：解压后运行 `AIConversationHub.exe`（或双击 `启动.bat`），自动起服务并打开浏览器。
-            - **AIConversationHub-macOS.zip**：解压后，**右键**点击 `AIConversationHub.app` →「打开」→「仍要打开」（首次需要，之后双击即可）。若双击没反应或想省事，可双击文件夹里的 `start-mac.command`，它会弹图形提示一步步引导你。
+            ---
 
-            数据只保存在本机，原始对话只读；首次启动在界面里确认数据源即可。
+            ## 下载哪个？
+
+            | 文件 | 平台 | 说明 |
+            |---|---|---|
+            | `AIConversationHub-Windows.zip` | Windows | 解压后双击 `AIConversationHub.exe` 即可 |
+            | `AIConversationHub-macOS.zip` | macOS | 解压后见下方说明 |
+
+            ## Windows 安装
+            1. 把 zip **完整解压**到一个文件夹（不要在压缩包里直接双击！）
+            2. 双击 `AIConversationHub.exe`（或 `启动.bat`）
+            3. 自动打开浏览器，在界面里确认数据源即可
+
+            ## macOS 安装
+            1. 把 zip **完整解压**到一个文件夹
+            2. 首次运行，任选一种方式：
+               - **方式 A（推荐）**：双击文件夹里的 `start-mac.command`，它会弹出图形提示，一步步教你打开 App，全程不用碰终端
+               - **方式 B**：**右键**点击 `AIConversationHub.app` →「打开」→「仍要打开」（首次需要通过 macOS 安全检查，之后双击即可）
+            3. 自动打开浏览器，在界面里确认数据源即可
+
+            > macOS 首次需要「右键 → 打开」是因为本软件没有苹果开发者签名（$99/年）。这是图形化操作，只弹一次，之后双击就能直接用。
+
+            ## 常见问题
+            - **双击没反应？** 确认已完整「解压」（不是在压缩包里直接运行）。macOS 首次需要右键打开，直接双击会被系统拦。
+            - **会上传我的对话吗？** 不会。软件只在本机运行，服务只绑定 `127.0.0.1`，原始对话只读、不上传任何数据到云端。
+            - **找不到数据？** 首次启动会自动发现本机已安装的 AI 助手；如果没找到，在「设置 → 数据源」里手动指定路径。
+
+            更多说明见压缩包内的「使用说明.txt」，或仓库 [README](https://github.com/Mark-Libetter/ai-conversation-hub#readme)。
