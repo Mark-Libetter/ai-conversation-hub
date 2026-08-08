@@ -22,6 +22,12 @@ AI Conversation Hub · 使用说明
     可能被杀毒软件/SmartScreen 拦截，请选择「仍要运行」或添加信任。
   · macOS：首次需要「右键 → 打开 → 仍要打开」，直接双击会被系统拦。
     若右键打开也没反应，双击 start-mac.command 跟着提示走。
+- macOS 提示「已损坏，无法打开」？
+  · 文件没有真的损坏！这是 macOS 对未签名应用的安全拦截（故意这么提示）。
+  · 解决：双击文件夹里的 start-mac.command，它会自动处理。
+  · 或者手动：打开「终端」，粘贴这条命令执行（把路径换成你的实际文件夹位置）：
+    xattr -cr ~/Desktop/AIConversationHub-macOS
+  · 执行后再右键 AIConversationHub.app → 打开 → 仍要打开，就不会再提示了。
 - 会上传我的对话吗？
   · 不会。软件只在本机运行，服务只绑定 127.0.0.1，原始对话只读、不上传。
 - 数据存在哪？
