@@ -2,18 +2,25 @@
 
 **中文** | [English](README.md)
 
-> 把散落在多个 AI 助手里的对话，汇成一个能搜索、能复盘、能复用的工作空间。
+> 跨 AI 编程助手的极速本地对话切换台：搜索、定位、继续工作。
 > 本地运行、零第三方依赖、对原始数据只读。
 
 ## 这是什么
 
-如果你同时用 Codex、Hermes、WorkBuddy、QoderWork、Claude Code、ZCode 等 AI 编程助手，对话散落在各家——"之前在哪聊过这个""那个项目做到哪一步了"都很难回答。Hub 把它们汇到一个本地工作空间，做三件事：
+如果你同时使用多个 AI 编程助手，对话会散落在各家——“之前在哪聊过这个”“那条任务怎么继续”都很难回答。Hub 的主路径只有三步：**搜索 → 选中 → 继续工作**。
 
-- **找对话**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「调试API」）——上周聊过的东西，一次搜索就能找到
+- **找对话**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「调试API」）
+- **继续工作**：Codex 可精确回到原会话；Claude Code 可复制精确恢复命令；其余客户端在没有公开、可验证的会话协议时，只标记为“打开客户端”，不制造虚假的一键直达
 - **每日回顾**：事实化的当天回顾——概览统计、按工作区分组的项目进展、你自己的状态标记（离线生成，不调模型）——让你每天结束时清楚今天到底完成了什么
 - **整理项目**：把相关对话勾选归入自命名项目，集中管理状态、笔记与任务清单——让做过的事变成可以回看的东西
 
-> 与其说是一个"历史查看器"，不如说是建在你散落 AI 对话之上的个人工作记忆。
+> 它不是另一个聊天客户端，也不负责替 agent 发消息；它是 Windows 优先、离线可用的跨 harness 对话切换台。
+
+### 速度目标
+
+- 页面监听不等待全量索引：UI 先出现，索引在后台完成
+- 真实 757 条本机会话基准（Windows / Python 3.13）：监听从旧版约 **1.97 s** 降到 **0.45 s**，首次列表约 **23 ms**
+- 会话详情采用有界 LRU 缓存，重复打开不再反复解析同一 JSONL
 
 ## 界面预览
 
@@ -37,6 +44,7 @@
 | **本地优先** | 全程本机运行，服务只绑定 `127.0.0.1`，数据不经过云端 |
 | **零依赖** | 纯 Python 标准库，无需 pip install |
 | **离线可用** | 搜索和每日回顾全程本地，不需要模型 |
+| **能力诚实** | 精确跳转、恢复命令、仅打开客户端三类能力分开标注 |
 
 ## 快速开始
 
@@ -60,7 +68,7 @@ python3 server.py       # macOS / Linux
 - macOS：双击 `start-macos.command`
 - 命令行：`python server.py`，然后浏览器打开 `http://127.0.0.1:8765`
 
-> 📂 **自动发现路径**：首次启动时，Hub 会**自动扫描本机已安装的 AI 编程助手**（Codex / Hermes / WorkBuddy / Claude Code / QoderWork / ZCode），按各家默认位置找到对应数据库文件并接入。**绝大多数情况下你什么都不用配，启动就能看到对话。** 只有当你的安装路径不是默认的（比如装在自定义目录、或用便携版），才需要手动指定——见第 2 步。
+> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。
 
 **第 2 步：确认数据源**（如果左侧栏没显示对话）
 1. 点击左侧栏底部「设置」⚙
@@ -118,7 +126,7 @@ python3 server.py       # macOS / Linux
 
 ## 内置数据源
 
-首版内置 6 个适配器：
+内置 10 个适配器：
 
 | Agent | 默认发现位置 |
 |---|---|
@@ -126,15 +134,28 @@ python3 server.py       # macOS / Linux
 | **Codex** | `~/.codex/state_5.sqlite` + rollout JSONL（尊重 `CODEX_HOME`） |
 | **WorkBuddy** | `~/.workbuddy/`（尊重 `WORKBUDDY_HOME`） |
 | **Claude Code** | `~/.claude/` |
+| **Cursor** | `%APPDATA%/Cursor/User/globalStorage/`（需要兼容的 `conversation-search.db`） |
+| **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db`（兼容改名后的 `QoderWork` / `QwenWorkCN` / `QwenWork` 目录，新旧数据自动合并） |
 | **ZCode** | `~/.zcode/cli/db/db.sqlite` |
+| **CodePilot** | 自动尝试 `~/.codepilot/`；也可手动选择包含 `chat_sessions` / `messages` 的数据库 |
+| **Marvis** | 自动尝试 `~/.marvis/state.db`；也可手动选择会话数据库 |
+
+## 续接能力矩阵
+
+| 来源 | 主操作 | 精确回到会话 | 说明 |
+|---|---|---:|---|
+| **Codex** | `codex://threads/<id>` | ✅ | 已按本机 Codex 桌面协议验证 |
+| **Claude Code** | 复制 `claude --resume <id>` | ✅ | 只复制、不自动执行命令 |
+| **Hermes / WorkBuddy / Cursor / QClaw / ZCode / Marvis** | 打开客户端 | — | 未发现可验证的会话级协议，因此不宣称精确定位 |
+| **QoderWork / CodePilot / 自定义源** | 复制 ID / 导出 | — | 保留安全回退，不猜测私有协议 |
 
 **想接入其它 agent？** 支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 功能一览
 
 ### 找对话
-- 跨 6 个源的布尔全文检索
+- 跨 10 个内置源与自定义源的布尔全文检索
 - 筛选：时间范围、状态、工作区、只看收藏
 - 对话详情：可追溯概览、收藏、标签、备注、导出 Markdown
 - 支持勾选多个对话批量导出
@@ -220,7 +241,7 @@ agent 90% 的查询在前两层就能解决。纯 Python 标准库实现，零�
 让你在各家助手里做过的事，不再散落、不再被遗忘。
 
 **支持哪些 AI 编程助手？**
-内置 6 个适配器：Codex CLI、Claude Code、Hermes、ZCode、QoderWork、WorkBuddy；
+内置 10 个适配器：Codex、Claude Code、Hermes、WorkBuddy、Cursor、QClaw、ZCode、QoderWork、CodePilot、Marvis；
 其它 agent（包括 ChatGPT / Gemini 等导出的聊天记录）可通过 JSONL / Markdown /
 SQLite 自定义数据源接入，无需改代码。
 
@@ -250,7 +271,7 @@ Python 3.10+（仅标准库，无需 pip install），Windows / macOS；也可�
 
 ```
 server.py           # 后端：HTTP 服务 + 索引 + 搜索 + 每日回顾
-source_adapters.py  # 数据源适配器（内置 6 个 + 自定义源框架）
+source_adapters.py  # 数据源适配器（内置 10 个 + 自定义源框架）
 static/
   app.js            # 前端逻辑
   index.html        # 页面结构

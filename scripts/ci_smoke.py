@@ -41,12 +41,17 @@ def main() -> int:
         payload = None
         while time.time() < deadline:
             payload = health()
-            if payload and payload.get("app") == "AIConversationHub":
+            if (
+                payload
+                and payload.get("app") == "AIConversationHub"
+                and payload.get("index", {}).get("status") in {"ready", "error"}
+            ):
                 break
             time.sleep(1)
         if not payload:
             print("FAIL: server did not become healthy")
             return 1
+        assert payload["index"]["status"] == "ready", payload["index"]
         print("PASS: /api/health ->", payload.get("app"), payload.get("platform"))
 
         sys.path.insert(0, str(REPO))
@@ -84,6 +89,16 @@ def main() -> int:
         daily = _get("/agent/daily")
         assert "day" in daily, "/agent/daily missing 'day'"
         print(f"PASS: /agent/daily responded, day={daily['day']}")
+
+        warmup_deadline = time.time() + 20
+        while time.time() < warmup_deadline:
+            payload = health() or payload
+            if payload.get("warmup", {}).get("status") in {"done", "skipped", "error"}:
+                break
+            time.sleep(0.2)
+        assert payload["warmup"]["status"] in {"done", "skipped"}, payload["warmup"]
+        assert payload["warmup"]["errors"] == [], payload["warmup"]
+        print(f"PASS: startup warmup -> {payload['warmup']['status']}")
 
         print("ALL PASS on", sys.platform)
         return 0

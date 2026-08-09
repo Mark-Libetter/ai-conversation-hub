@@ -25,7 +25,7 @@ import threading
 import time
 import urllib.parse
 import webbrowser
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
@@ -51,8 +51,8 @@ CORE_SOURCES = ("hermes", "codex", "workbuddy")
 SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
-HUB_SCHEMA_VERSION = 15
-APP_VERSION = "0.1.10"
+HUB_SCHEMA_VERSION = 16
+APP_VERSION = "0.2.0"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "conversation_relations",
@@ -543,6 +543,18 @@ def notes_db() -> sqlite3.Connection:
           content,
           tokenize='unicode61 remove_diacritics 2',
           prefix='2 3'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_search_meta (
+          source TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          signature TEXT NOT NULL,
+          message_count INTEGER NOT NULL DEFAULT 0,
+          indexed_at REAL NOT NULL,
+          PRIMARY KEY(source, conversation_id)
         )
         """
     )
@@ -1482,10 +1494,61 @@ class Conversation:
     native_project: str = ""
 
 
+def launch_targets_for(item: Conversation) -> list[dict[str, Any]]:
+    """Describe only locally safe, source-specific continuation options.
+
+    `exact` means the target identifies this conversation, not merely its app.
+    The browser executes URI targets; command targets are copied, never run.
+    """
+    session_id = str(item.id or "")
+    safe_session_id = bool(re.fullmatch(r"[A-Za-z0-9._:-]{6,240}", session_id))
+    if item.source == "codex" and safe_session_id:
+        return [{
+            "kind": "deep_link",
+            "label": "继续 Codex 会话",
+            "href": f"codex://threads/{urllib.parse.quote(session_id, safe='')}",
+            "exact": True,
+            "note": "精确定位到这条 Codex 会话",
+        }]
+    if item.source == "claude" and safe_session_id and "metadata-only" not in item.source_kind:
+        return [{
+            "kind": "copy_command",
+            "label": "复制 Claude 恢复命令",
+            "value": f"claude --resume {session_id}",
+            "exact": True,
+            "note": "在终端粘贴即可恢复这条会话；中心不会代你执行命令",
+        }]
+    app_links = {
+        "hermes": ("Hermes", "hermes://"),
+        "workbuddy": ("WorkBuddy", "workbuddy://"),
+        "cursor": ("Cursor", "cursor://"),
+        "qclaw": ("QClaw", "qclaw://"),
+        "zcode": ("ZCode", "zcode://"),
+        "marvis": ("Marvis", "marvis://"),
+    }
+    app_link = app_links.get(item.source)
+    if app_link:
+        label, href = app_link
+        return [{
+            "kind": "app_link",
+            "label": f"打开 {label}",
+            "href": href,
+            "exact": False,
+            "note": "可打开客户端，但该客户端未提供可验证的会话级跳转",
+        }]
+    return []
+
+
 class ConversationIndex:
-    def __init__(self) -> None:
+    def __init__(self, *, refresh_on_init: bool = True) -> None:
         self._lock = threading.RLock()
         self._refresh_guard = threading.RLock()
+        self._index_maintenance_lock = threading.Lock()
+        self._ready_event = threading.Event()
+        self._initial_status = "pending"
+        self._initial_error = ""
+        self._initial_started_at = 0.0
+        self._initial_finished_at = 0.0
         self._items: list[Conversation] = []
         self._by_key: dict[tuple[str, str], Conversation] = {}
         self._excluded_codex_background = 0
@@ -1499,8 +1562,43 @@ class ConversationIndex:
         self._summary_cache = {"key": "", "payload": None}
         self._daily_entries_cache: dict[str, tuple[str, list[dict[str, Any]], str]] = {}
         self._project_detail_cache: dict[str, dict[str, Any]] = {}
+        self._message_cache: OrderedDict[tuple[str, str, float], list[dict[str, Any]]] = OrderedDict()
         self.refreshed_at = 0.0
-        self.refresh()
+        if refresh_on_init:
+            self.initialize()
+
+    def initialize(self) -> None:
+        """Build the first index without blocking the HTTP listener."""
+        with self._refresh_guard:
+            if self._initial_status in {"loading", "ready"}:
+                return
+            self._initial_status = "loading"
+            self._initial_error = ""
+            self._initial_started_at = time.time()
+        try:
+            self.refresh()
+            self._initial_status = "ready"
+        except Exception as exc:
+            self._initial_status = "error"
+            self._initial_error = clean_text(exc, 800)
+        finally:
+            self._initial_finished_at = time.time()
+            self._ready_event.set()
+
+    def initial_state(self) -> dict[str, Any]:
+        finished = self._initial_finished_at or time.time()
+        seconds = (
+            max(0.0, finished - self._initial_started_at)
+            if self._initial_started_at
+            else 0.0
+        )
+        return {
+            "status": self._initial_status,
+            "ready": self._initial_status == "ready",
+            "error": self._initial_error,
+            "seconds": round(seconds, 3),
+            "conversations": len(self._items),
+        }
 
 
     @staticmethod
@@ -1620,6 +1718,8 @@ class ConversationIndex:
 
 
     def maybe_refresh(self, min_interval: float = 45.0, *, block: bool = False) -> bool:
+        if not self._ready_event.is_set() or self._initial_status != "ready":
+            return False
         now = time.time()
         with self._refresh_guard:
             if now - self._last_change_check < min_interval:
@@ -1718,6 +1818,7 @@ class ConversationIndex:
                 self.refreshed_at = time.time()
                 self._summary_cache = {"key": "", "payload": None}
                 self._project_detail_cache.clear()
+                self._message_cache.clear()
             signature = self._current_source_signature(max_age=0)
             self._source_signature = signature
             self._last_change_check = time.time()
@@ -1812,26 +1913,32 @@ class ConversationIndex:
 
 
     def _background_index_maintenance(self, items: list[Conversation], signature: str) -> None:
-        try:
-            self._refresh_persistent_search(items, signature)
-            self._sync_conversation_relations()
-        except Exception as exc:  # pragma: no cover - defensive background path
+        # Let the first list/detail requests win disk and GIL time. Search can
+        # keep using the previous persistent index during this short idle gap.
+        time.sleep(2.0)
+        with self._index_maintenance_lock:
+            if signature != self._source_signature:
+                return
             try:
-                with notes_db() as conn:
-                    conn.execute(
-                        """
-                        INSERT INTO search_index_state(
-                          source,source_signature,status,error,updated_at
-                        ) VALUES('__all__',?,'failed',?,?)
-                        ON CONFLICT(source) DO UPDATE SET
-                          source_signature=excluded.source_signature,status='failed',
-                          error=excluded.error,updated_at=excluded.updated_at
-                        """,
-                        (signature, clean_text(exc, 800), time.time()),
-                    )
-                    conn.commit()
-            except Exception:
-                pass
+                self._refresh_persistent_search(items, signature)
+                self._sync_conversation_relations()
+            except Exception as exc:  # pragma: no cover - defensive background path
+                try:
+                    with notes_db() as conn:
+                        conn.execute(
+                            """
+                            INSERT INTO search_index_state(
+                              source,source_signature,status,error,updated_at
+                            ) VALUES('__all__',?,'failed',?,?)
+                            ON CONFLICT(source) DO UPDATE SET
+                              source_signature=excluded.source_signature,status='failed',
+                              error=excluded.error,updated_at=excluded.updated_at
+                            """,
+                            (signature, clean_text(exc, 800), time.time()),
+                        )
+                        conn.commit()
+                except Exception:
+                    pass
 
     def _refresh_persistent_search(
         self,
@@ -1851,29 +1958,106 @@ class ConversationIndex:
                     and str(current["status"]) == "ready"
                 ):
                     return
-            rows: list[tuple[str, str, str, str]] = []
+                known = {
+                    (str(row["source"]), str(row["conversation_id"])): {
+                        "signature": str(row["signature"]),
+                        "message_count": int(row["message_count"] or 0),
+                    }
+                    for row in conn.execute(
+                        "SELECT source,conversation_id,signature,message_count "
+                        "FROM conversation_search_meta"
+                    )
+                }
+                needs_full_reset = not known and bool(
+                    conn.execute("SELECT count(*) FROM conversation_search").fetchone()[0]
+                )
+
             source_counts = {
                 source: {"conversations": 0, "messages": 0}
                 for source in SOURCES
             }
+            changed: list[
+                tuple[Conversation, str, list[tuple[str, str, str, str]]]
+            ] = []
+            current_keys: set[tuple[str, str]] = set()
             for item in items:
+                if item.source not in source_counts:
+                    source_counts[item.source] = {"conversations": 0, "messages": 0}
                 source_counts[item.source]["conversations"] += 1
+                key = (item.source, item.id)
+                current_keys.add(key)
+                path_signature = ""
+                if item.rollout_path:
+                    path = Path(item.rollout_path)
+                    try:
+                        stat = path.stat()
+                        path_signature = f"{stat.st_size}:{stat.st_mtime_ns}"
+                    except OSError:
+                        path_signature = "missing"
+                item_signature = hashlib.sha256(
+                    "|".join(
+                        [
+                            item.source,
+                            item.id,
+                            f"{item.updated_at:.6f}",
+                            str(item.message_count),
+                            item.source_kind,
+                            path_signature,
+                        ]
+                    ).encode("utf-8")
+                ).hexdigest()
+                previous = known.get(key)
+                if previous and previous["signature"] == item_signature:
+                    source_counts[item.source]["messages"] += previous["message_count"]
+                    continue
+                rows: list[tuple[str, str, str, str]] = []
                 for message in self._messages_for_item(item, limit=None):
                     text = clean_text(message.get("text"), 20000)
                     if not text:
                         continue
                     rows.append((item.source, item.id, str(message["role"]), text))
-                    source_counts[item.source]["messages"] += 1
+                source_counts[item.source]["messages"] += len(rows)
+                changed.append((item, item_signature, rows))
+
             with notes_db() as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                conn.execute("DELETE FROM conversation_search")
-                conn.executemany(
-                    """
-                    INSERT INTO conversation_search(source,conversation_id,role,content)
-                    VALUES(?,?,?,?)
-                    """,
-                    rows,
-                )
+                if needs_full_reset:
+                    # One-time migration from v0.1.x. Keep the delete and rebuild
+                    # in one transaction so interruption preserves the old index.
+                    conn.execute("DELETE FROM conversation_search")
+                for source, conversation_id in set(known) - current_keys:
+                    conn.execute(
+                        "DELETE FROM conversation_search WHERE source=? AND conversation_id=?",
+                        (source, conversation_id),
+                    )
+                    conn.execute(
+                        "DELETE FROM conversation_search_meta WHERE source=? AND conversation_id=?",
+                        (source, conversation_id),
+                    )
+                for item, item_signature, rows in changed:
+                    conn.execute(
+                        "DELETE FROM conversation_search WHERE source=? AND conversation_id=?",
+                        (item.source, item.id),
+                    )
+                    conn.executemany(
+                        """
+                        INSERT INTO conversation_search(source,conversation_id,role,content)
+                        VALUES(?,?,?,?)
+                        """,
+                        rows,
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO conversation_search_meta(
+                          source,conversation_id,signature,message_count,indexed_at
+                        ) VALUES(?,?,?,?,?)
+                        ON CONFLICT(source,conversation_id) DO UPDATE SET
+                          signature=excluded.signature,
+                          message_count=excluded.message_count,
+                          indexed_at=excluded.indexed_at
+                        """,
+                        (item.source, item.id, item_signature, len(rows), now),
+                    )
                 for source, counts in source_counts.items():
                     conn.execute(
                         """
@@ -1908,7 +2092,13 @@ class ConversationIndex:
                       message_count=excluded.message_count,status='ready',error='',
                       built_at=excluded.built_at,updated_at=excluded.updated_at
                     """,
-                    (source_signature, len(items), len(rows), now, now),
+                    (
+                        source_signature,
+                        len(items),
+                        sum(value["messages"] for value in source_counts.values()),
+                        now,
+                        now,
+                    ),
                 )
                 conn.commit()
         except (OSError, sqlite3.DatabaseError, ValueError) as exc:
@@ -2695,6 +2885,7 @@ class ConversationIndex:
         return {
             "conversation": asdict(item),
             "messages": messages[-16:],
+            "launch_targets": launch_targets_for(item),
             "project_assignment": dict(assignment) if assignment else None,
             "related_conversations": related,
             "overview": {
@@ -3648,12 +3839,26 @@ class ConversationIndex:
         end: float | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
+        cacheable = (
+            start is None
+            and end is None
+            and limit is not None
+            and item.source in {"codex", "workbuddy"}
+        )
+        cache_key = (item.source, item.id, self.refreshed_at)
+        if cacheable:
+            with self._lock:
+                cached = self._message_cache.get(cache_key)
+                if cached is not None:
+                    self._message_cache.move_to_end(cache_key)
+                    return list(cached[-limit:])
+        read_limit = 500 if cacheable else limit
         if item.source == "hermes":
             messages = self._hermes_messages(item.id, start, end, limit)
         elif item.source == "codex":
-            messages = self._codex_messages(item.rollout_path, start, end, limit)
+            messages = self._codex_messages(item.rollout_path, start, end, read_limit)
         elif item.source == "workbuddy":
-            messages = self._workbuddy_messages(item.rollout_path, start, end, limit)
+            messages = self._workbuddy_messages(item.rollout_path, start, end, read_limit)
         else:
             messages = self._external_messages_for_item(item, start, end, limit)
         result = []
@@ -3668,6 +3873,13 @@ class ConversationIndex:
                         "timestamp": float(message.get("timestamp") or 0),
                     }
                 )
+        if cacheable:
+            with self._lock:
+                self._message_cache[cache_key] = list(result)
+                self._message_cache.move_to_end(cache_key)
+                while len(self._message_cache) > 32:
+                    self._message_cache.popitem(last=False)
+            return result[-limit:]
         return result
 
     def _resolve_export_items(
@@ -4193,7 +4405,7 @@ class ConversationIndex:
         return {"ok": True, "inserted": inserted, "updated": updated, "preview": preview}
 
 
-INDEX = ConversationIndex()
+INDEX = ConversationIndex(refresh_on_init=False)
 CSRF_TOKEN = secrets.token_urlsafe(32)
 
 # 启动预热状态：pending -> running -> done/skipped/error
@@ -4258,6 +4470,7 @@ def startup_warmup() -> None:
                 workspace="all",
                 native_project="all",
                 favorites=False,
+                tag="",
                 limit=120,
                 offset=0,
             ),
@@ -4363,6 +4576,7 @@ class Handler(BaseHTTPRequestHandler):
                 "platform": "macos" if sys.platform == "darwin" else ("windows" if os.name == "nt" else "linux"),
                 "setup_required": setup_status()["required"],
                 "data_dir": str(DATA_DIR),
+                "index": INDEX.initial_state(),
                 "warmup": {
                     "status": WARMUP_STATE["status"],
                     "seconds": WARMUP_STATE["seconds"],
@@ -4653,10 +4867,22 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
     url = f"http://127.0.0.1:{port}/"
     print(f"AI Conversation Hub {APP_VERSION}: {url}")
     print("Local-only. Press Ctrl+C to stop.")
-    # 首开提速：端口就绪后立即在后台预热首屏端点，与首批请求并发。
-    threading.Thread(target=startup_warmup, name="hub-startup-warmup", daemon=True).start()
+    # Bind first so the shell appears immediately; build the local index behind it.
+    def initialize_runtime() -> None:
+        INDEX.initialize()
+        if INDEX.initial_state()["ready"]:
+            startup_warmup()
+        else:
+            WARMUP_STATE["status"] = "error"
+            WARMUP_STATE["errors"] = [INDEX.initial_state()["error"]]
+
+    threading.Thread(
+        target=initialize_runtime,
+        name="hub-initialize-runtime",
+        daemon=True,
+    ).start()
     if open_browser:
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.15, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

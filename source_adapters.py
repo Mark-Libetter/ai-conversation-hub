@@ -11,14 +11,26 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-EXTRA_SOURCES = ("claude", "qoderwork", "zcode")
+EXTRA_SOURCES = (
+    "claude",
+    "cursor",
+    "qclaw",
+    "qoderwork",
+    "zcode",
+    "codepilot",
+    "marvis",
+)
 MAX_CLAUDE_TRANSCRIPT_BYTES = 100 * 1024 * 1024
 CUSTOM_SOURCE_PREFIX = "custom_"
 CUSTOM_FORMATS = {"jsonl", "markdown", "sqlite"}
 SOURCE_LABELS = {
     "claude": "Claude Code",
+    "cursor": "Cursor",
+    "qclaw": "QClaw",
     "qoderwork": "QoderWork",
     "zcode": "ZCode",
+    "codepilot": "CodePilot",
+    "marvis": "Marvis",
 }
 # QoderWork 产品改名谱系（Qoder -> QoderWork -> 千问办公/QwenWork），
 # 同一台机器可能同时存在新旧两代数据目录，需要合并读取以免丢对话
@@ -195,6 +207,10 @@ def default_candidates(source: str) -> list[Path]:
     )
     if source == "claude":
         return [home / ".claude"]
+    if source == "cursor":
+        return [application_support / "Cursor" / "User" / "globalStorage"]
+    if source == "qclaw":
+        return [home / ".qclaw"]
     if source == "qoderwork":
         return [
             application_support / name / "data" / "agents.db"
@@ -202,6 +218,17 @@ def default_candidates(source: str) -> list[Path]:
         ]
     if source == "zcode":
         return [home / ".zcode" / "cli" / "db" / "db.sqlite"]
+    if source == "codepilot":
+        return [
+            home / ".codepilot" / "chat.db",
+            home / ".codepilot" / "data.db",
+            application_support / "CodePilot" / "chat.db",
+        ]
+    if source == "marvis":
+        return [
+            home / ".marvis" / "state.db",
+            application_support / "Marvis" / "state.db",
+        ]
     return []
 
 
@@ -325,11 +352,12 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
             valid = {"chat_sessions", "messages"}.issubset(sqlite_tables(path))
             return valid, "CodePilot 会话数据库" if valid else "数据库结构不匹配"
         if source == "cursor":
-            valid = path.is_dir() and (
-                (path / "state.vscdb").is_file()
-                or (path / "conversation-search.db").is_file()
-            )
-            return valid, "Cursor 本地会话存储" if valid else "未找到 Cursor 会话数据库"
+            valid = path.is_dir() and (path / "conversation-search.db").is_file()
+            if valid:
+                return True, "Cursor 本地会话搜索数据库"
+            if path.is_dir() and (path / "state.vscdb").is_file():
+                return False, "已发现 Cursor 状态库，但当前版本没有兼容的 conversation-search.db"
+            return False, "未找到 Cursor 会话数据库"
         if source == "marvis":
             valid = {"conversations", "messages"}.issubset(sqlite_tables(path))
             return valid, "Marvis 会话数据库" if valid else "数据库结构不匹配"
@@ -355,47 +383,41 @@ def estimate_conversations(source: str, path: Path | None) -> int:
         return 0
     try:
         if source == "claude":
-            if not path.is_dir():
-                return False, "目录不存在"
-            transcripts = _claude_transcript_files(path)
-            history_ids = _claude_history_ids(path)
-            index_ids = set(_claude_session_index_entries(path))
-            oversized = sum(
-                1
-                for file_path in transcripts
-                if file_path.stat().st_size > MAX_CLAUDE_TRANSCRIPT_BYTES
+            transcript_ids = {item.stem for item in _claude_transcript_files(path)}
+            return len(
+                transcript_ids
+                | _claude_history_ids(path)
+                | set(_claude_session_index_entries(path))
             )
-            if not transcripts and not history_ids and not index_ids:
-                return False, "未找到完整会话、history.jsonl 或 sessions-index.json"
-            details = [f"{len(transcripts)} 个完整会话文件"]
-            transcript_ids = {item.stem for item in transcripts}
-            history_only = len(history_ids - transcript_ids)
-            index_only = len(index_ids - transcript_ids - history_ids)
-            if history_only:
-                details.append(f"{history_only} 个历史索引会话")
-            if index_only:
-                details.append(f"{index_only} 个项目索引会话")
-            if oversized:
-                details.append(f"{oversized} 个超大文件将安全降级")
-            return True, " · ".join(details)
         if source == "codepilot":
-            valid = {"chat_sessions", "messages"}.issubset(sqlite_tables(path))
-            return valid, "CodePilot 会话数据库" if valid else "数据库结构不匹配"
+            with readonly_db(path) as conn:
+                return int(conn.execute("SELECT count(*) FROM chat_sessions").fetchone()[0])
         if source == "cursor":
-            valid = path.is_dir() and (
-                (path / "state.vscdb").is_file()
-                or (path / "conversation-search.db").is_file()
-            )
-            return valid, "Cursor 本地会话存储" if valid else "未找到 Cursor 会话数据库"
+            search_db = path / "conversation-search.db"
+            if not search_db.is_file():
+                return 0
+            with readonly_db(search_db) as conn:
+                return int(
+                    conn.execute(
+                        "SELECT count(*) FROM conversations WHERE source='local'"
+                    ).fetchone()[0]
+                )
         if source == "marvis":
-            valid = {"conversations", "messages"}.issubset(sqlite_tables(path))
-            return valid, "Marvis 会话数据库" if valid else "数据库结构不匹配"
+            with readonly_db(path) as conn:
+                return int(conn.execute("SELECT count(*) FROM conversations").fetchone()[0])
         if source == "qclaw":
-            valid = (
-                path.is_dir()
-                and (path / "agents" / "main" / "sessions" / "sessions.json").is_file()
+            sessions_path = path / "agents" / "main" / "sessions" / "sessions.json"
+            sessions = json_value(sessions_path.read_text(encoding="utf-8"), {})
+            return sum(
+                1
+                for key, value in sessions.items()
+                if isinstance(value, dict)
+                and value.get("sessionId")
+                and not any(
+                    marker in str(key)
+                    for marker in (":heartbeat", ":cron:", ":dreaming-", ":subagent:")
+                )
             )
-            return valid, "QClaw 主会话目录" if valid else "未找到 QClaw 主会话清单"
         if source == "qoderwork":
             seen: set[str] = set()
             for db_path in _qoderwork_family_dbs(path):
@@ -721,8 +743,12 @@ def configured_custom_sources(
 def _candidate_filenames(source: str) -> tuple[str, ...]:
     return {
         "claude": ("history.jsonl",),
+        "cursor": ("conversation-search.db",),
+        "qclaw": ("sessions.json",),
         "qoderwork": ("agents.db",),
         "zcode": ("db.sqlite",),
+        "codepilot": ("chat.db", "data.db"),
+        "marvis": ("state.db",),
     }.get(source, ())
 
 
@@ -771,6 +797,13 @@ def discover_extra_sources(
                 file_path = Path(current) / filename
                 for source in tuple(possible):
                     candidates: list[Path] = [file_path]
+                    if source == "cursor" and filename.casefold() == "conversation-search.db":
+                        candidates.insert(0, file_path.parent)
+                    elif source == "qclaw" and filename.casefold() == "sessions.json":
+                        try:
+                            candidates.insert(0, file_path.parents[3])
+                        except IndexError:
+                            pass
                     candidate = next(
                         (value for value in candidates if validate_source(source, value)[0]),
                         None,
@@ -1714,8 +1747,12 @@ def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
 
 LOADERS = {
     "claude": _load_claude,
+    "cursor": _load_cursor,
+    "qclaw": _load_qclaw,
     "qoderwork": _load_qoderwork,
     "zcode": _load_zcode,
+    "codepilot": _load_codepilot,
+    "marvis": _load_marvis,
 }
 
 

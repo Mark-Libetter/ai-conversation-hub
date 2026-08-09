@@ -14,12 +14,28 @@
       "enabled": true,
       "path": ""
     },
+    "cursor": {
+      "enabled": false,
+      "path": ""
+    },
+    "qclaw": {
+      "enabled": false,
+      "path": ""
+    },
     "qoderwork": {
       "enabled": true,
       "path": ""
     },
     "zcode": {
       "enabled": true,
+      "path": ""
+    },
+    "codepilot": {
+      "enabled": false,
+      "path": ""
+    },
+    "marvis": {
+      "enabled": false,
       "path": ""
     }
   },

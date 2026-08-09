@@ -327,8 +327,12 @@ body.sidebar-collapsed .utility-icon { display: grid; }
 .source-dot.codex { background: var(--codex); }
 .source-dot.workbuddy { background: var(--workbuddy); }
 .source-dot.claude { background: #b86f52; }
+.source-dot.cursor { background: #7c5cff; }
+.source-dot.qclaw { background: #d58936; }
 .source-dot.qoderwork { background: #2d927d; }
 .source-dot.zcode { background: #4c6ef5; }
+.source-dot.codepilot { background: #cf4f73; }
+.source-dot.marvis { background: #61727c; }
 .source-dot.all {
   border: 1px solid var(--ink);
   background: transparent;
@@ -504,12 +508,12 @@ body.resizing-detail .workstream,
 body.resizing-detail .detail-pane { pointer-events: none; }
 
 .daily-brief {
-  min-height: 108px;
+  min-height: 76px;
   display: grid;
-  grid-template-columns: 92px minmax(0,1fr) 118px;
-  gap: 18px;
+  grid-template-columns: 82px minmax(0,1fr) 104px;
+  gap: 14px;
   align-items: center;
-  padding: 15px 0 17px;
+  padding: 10px 0 11px;
   border-bottom: 1px solid var(--line-dark);
 }
 .brief-label strong, .brief-label span { display: block; }
@@ -845,6 +849,32 @@ mark { background: #e9dfad; color: var(--ink); }
   color: var(--ink);
 }
 .detail-actions { display: flex; gap: 7px; margin: 20px 0 26px; }
+.launch-note {
+  margin: -18px 0 24px;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.launch-note.exact { color: var(--codex); }
+.index-loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+.index-loading span {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line-dark);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: index-spin .75s linear infinite;
+}
+.index-loading strong { color: var(--ink); font-size: 13px; }
+.index-loading small { font-size: 10px; }
+@keyframes index-spin { to { transform: rotate(360deg); } }
 .conversation-search-panel {
   position: sticky;
   z-index: 6;
@@ -3111,7 +3141,8 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
   background: var(--paper-2); box-shadow: 0 6px 18px rgba(23,63,59,.14);
 }
 .more-filters-panel label { display: grid; gap: 5px; font-size: 10px; color: var(--muted); font-weight: 600; }
-.more-filters-panel #workspaceFilter, .more-filters-panel #nativeProjectFilter { width: 100%; }
+.more-filters-panel select { width: 100%; }
+.filter-panel-actions { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
 .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; flex: 0 1 auto; }
 .tag-chip {
   padding: 3px 10px; border: 1px solid var(--line-dark); border-radius: 999px;

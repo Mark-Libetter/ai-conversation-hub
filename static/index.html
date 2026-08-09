@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-        <link rel="stylesheet" href="/app.css?v=lite29">
+    <link rel="stylesheet" href="/app.css?v=instant1">
   </head>
   <body>
     <div class="app-frame">
@@ -49,11 +49,23 @@
               <button class="source-row" data-source="claude" type="button">
                 <span class="source-dot claude"></span><span>Claude Code</span><b id="claudeCount">—</b>
               </button>
+              <button class="source-row" data-source="cursor" type="button">
+                <span class="source-dot cursor"></span><span>Cursor</span><b id="cursorCount">—</b>
+              </button>
+              <button class="source-row" data-source="qclaw" type="button">
+                <span class="source-dot qclaw"></span><span>QClaw</span><b id="qclawCount">—</b>
+              </button>
               <button class="source-row" data-source="qoderwork" type="button">
                 <span class="source-dot qoderwork"></span><span>QoderWork</span><b id="qoderworkCount">—</b>
               </button>
               <button class="source-row" data-source="zcode" type="button">
                 <span class="source-dot zcode"></span><span>ZCode</span><b id="zcodeCount">—</b>
+              </button>
+              <button class="source-row" data-source="codepilot" type="button">
+                <span class="source-dot codepilot"></span><span>CodePilot</span><b id="codepilotCount">—</b>
+              </button>
+              <button class="source-row" data-source="marvis" type="button">
+                <span class="source-dot marvis"></span><span>Marvis</span><b id="marvisCount">—</b>
               </button>
               <button class="source-row" data-source="hermes" type="button">
                 <span class="source-dot hermes"></span><span>Hermes</span><b id="hermesCount">—</b>
@@ -82,8 +94,12 @@
               <option value="workbuddy">WorkBuddy</option>
               <option value="codex">Codex</option>
               <option value="claude">Claude Code</option>
+              <option value="cursor">Cursor</option>
+              <option value="qclaw">QClaw</option>
               <option value="qoderwork">QoderWork</option>
               <option value="zcode">ZCode</option>
+              <option value="codepilot">CodePilot</option>
+              <option value="marvis">Marvis</option>
               <option value="hermes">Hermes</option>
             </select>
             <input id="searchInput" type="search" placeholder="搜索对话，支持 OR / NOT / &quot;短语&quot;">
@@ -124,19 +140,23 @@
                   <button class="quick-range active" data-range="all" type="button">全部</button>
                 </div>
                 <div class="filter-actions">
-                  <select id="statusFilter" aria-label="管理状态">
-                    <option value="all">全部状态</option>
-                    <option value="todo">待继续</option>
-                    <option value="done">已完成</option>
-                    <option value="reference">重要参考</option>
-                    <option value="archive_candidate">可归档候选</option>
-                  </select>
-                  <select id="tagFilter" aria-label="标签">
-                    <option value="">全部标签</option>
-                  </select>
                   <details id="moreFilters" class="more-filters">
-                    <summary>更多筛选</summary>
+                    <summary>筛选</summary>
                     <div class="more-filters-panel">
+                      <label>状态
+                        <select id="statusFilter" aria-label="管理状态">
+                          <option value="all">全部状态</option>
+                          <option value="todo">待继续</option>
+                          <option value="done">已完成</option>
+                          <option value="reference">重要参考</option>
+                          <option value="archive_candidate">可归档候选</option>
+                        </select>
+                      </label>
+                      <label>标签
+                        <select id="tagFilter" aria-label="标签">
+                          <option value="">全部标签</option>
+                        </select>
+                      </label>
                       <label>工作区
                         <select id="workspaceFilter" aria-label="工作区">
                           <option value="all">全部工作区</option>
@@ -147,10 +167,12 @@
                           <option value="all">全部原生项目</option>
                         </select>
                       </label>
+                      <div class="filter-panel-actions">
+                        <button id="favoriteFilter" class="button ghost" type="button" aria-pressed="false">只看收藏</button>
+                        <button id="clearFiltersButton" class="button ghost" type="button">清除筛选</button>
+                      </div>
                     </div>
                   </details>
-                  <button id="favoriteFilter" class="button ghost" type="button" aria-pressed="false">只看收藏</button>
-                  <button id="clearFiltersButton" class="button ghost" type="button">清除</button>
                 </div>
               </div>
 
@@ -369,6 +391,7 @@
           <button class="button secondary copy-id" type="button">复制 ID</button>
           <button class="button ghost export-conversation" type="button">导出 Markdown</button>
         </div>
+        <p class="launch-note muted"></p>
         <section class="overview-block">
           <h3>可追溯概览</h3><dl class="overview"></dl>
         </section>
@@ -546,6 +569,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=lite31" defer></script>
+    <script src="/app.js?v=instant1" defer></script>
   </body>
 </html>

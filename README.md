@@ -2,18 +2,25 @@
 
 [中文](README_ZH.md) | **English**
 
-> Turn scattered AI conversations into one workspace you can search, review, and reuse.
+> An instant local conversation switchboard for AI coding assistants: search, locate, continue.
 > Local-first, zero dependencies, read-only to your original data.
 
 ## What it does
 
-If you work across several AI coding assistants (Codex, Hermes, WorkBuddy, QoderWork, Claude Code, ZCode), your conversations live in each one separately — so "where did I discuss this before?" and "how far did that project get?" are hard to answer. The Hub brings them into one local workspace for three things:
+If you work across several AI coding assistants, your conversations live in each one separately. The Hub makes the primary path three steps: **search → select → continue**.
 
-- **Find**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`) — so last week's discussion is one query away
+- **Find**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`)
+- **Continue**: exact Codex deep links, exact Claude Code resume commands, and honestly labeled app-only fallbacks where a provider exposes no verifiable session protocol
 - **Review**: a fact-based daily recap — overview stats, project progress grouped by workspace, your own status markers (generated offline, no model calls) — so you close each day knowing what actually got done
 - **Organize**: check related conversations into named projects with status, notes, and task lists — so the work you did turns into something you can revisit
 
-> Think of it less as a history viewer, and more as a personal workspace memory built on top of your scattered AI conversations.
+> This is not another chat client. It is a Windows-first, offline-capable switchboard over the harnesses you already use.
+
+### Speed target
+
+- The listener binds before the full local index is built, so the UI appears immediately
+- Real 757-conversation Windows/Python 3.13 benchmark: listener readiness improved from about **1.97 s** to **0.45 s**; first 120-row list loads in about **23 ms**
+- A bounded detail cache avoids reparsing the same JSONL on repeated opens
 
 ## Screenshots
 
@@ -37,6 +44,7 @@ As a side note, this is the author's first vibe coding project. Bug reports are 
 | **Local-first** | Runs entirely on your machine; server binds only to `127.0.0.1`; nothing goes to the cloud |
 | **Zero dependencies** | Pure Python standard library, no `pip install` needed |
 | **Offline-capable** | Search and daily review work fully offline, no model required |
+| **Honest capability labels** | Exact resume, copied command, and app-only launch are shown as different capabilities |
 
 ## Quick start
 
@@ -60,7 +68,7 @@ Open `http://127.0.0.1:8765` in your browser.
 - macOS: double-click `start-macos.command`
 - Command line: `python server.py`, then open `http://127.0.0.1:8765`
 
-> 📂 **Auto-discovery**: On first launch, the Hub **automatically scans for installed AI coding assistants** (Codex / Hermes / WorkBuddy / Claude Code / QoderWork / ZCode) and finds their databases by default locations. **In most cases you don't need to configure anything — just launch and your conversations appear.** Manual configuration is only needed if your install path is non-default (e.g., portable/custom directory) — see Step 2.
+> 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
 
 **Step 2: Confirm data sources** (if the sidebar shows no conversations)
 1. Click **Settings** ⚙ at the bottom of the sidebar
@@ -117,7 +125,7 @@ Double-click `start-macos.command`.
 
 ## Built-in data sources
 
-6 adapters shipped:
+10 adapters shipped:
 
 | Agent | Default discovery location |
 |---|---|
@@ -125,15 +133,28 @@ Double-click `start-macos.command`.
 | **Codex** | `~/.codex/state_5.sqlite` + rollout JSONL (respects `CODEX_HOME`) |
 | **WorkBuddy** | `~/.workbuddy/` (respects `WORKBUDDY_HOME`) |
 | **Claude Code** | `~/.claude/` |
+| **Cursor** | `%APPDATA%/Cursor/User/globalStorage/` (requires a compatible `conversation-search.db`) |
+| **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db` (also matches renamed `QoderWork` / `QwenWorkCN` / `QwenWork` dirs; old + new data merged automatically) |
 | **ZCode** | `~/.zcode/cli/db/db.sqlite` |
+| **CodePilot** | Tries `~/.codepilot/`; a compatible DB can also be selected manually |
+| **Marvis** | Tries `~/.marvis/state.db`; a compatible DB can also be selected manually |
+
+## Continuation capability matrix
+
+| Source | Primary action | Exact session | Notes |
+|---|---|---:|---|
+| **Codex** | `codex://threads/<id>` | Yes | Verified against the installed Codex desktop protocol |
+| **Claude Code** | Copy `claude --resume <id>` | Yes | Copied only; the Hub never executes the command |
+| **Hermes / WorkBuddy / Cursor / QClaw / ZCode / Marvis** | Open app | No | No verifiable session-level protocol is claimed |
+| **QoderWork / CodePilot / custom** | Copy ID / export | No | Safe fallback; no guessed private protocol |
 
 **Want to connect another agent?** Supports JSONL / Markdown / SQLite custom formats, no code changes needed — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Features
 
 ### Find
-- Boolean full-text search across all 6 sources
+- Boolean full-text search across 10 built-in and custom sources
 - Filters: time range, status, workspace, favorites-only
 - Conversation detail: overview, favorites, tags, notes, Markdown export
 - Batch export of selected conversations
@@ -214,7 +235,7 @@ L2 summary-level (conversation overview, cheap) → L3 full-text (`budget` contr
 When you use several AI coding assistants (Codex CLI, Claude Code, Hermes, ZCode, etc.), each stores its conversation logs in a separate directory, with no shared place to search, review, or build on them. The Hub brings them into one local workspace: cross-agent search, daily work review, project memory, tags/favorites, and Markdown export — so the work you do across assistants doesn't stay scattered and forgotten.
 
 **Which AI coding assistants are supported?**
-6 built-in adapters: Codex CLI, Claude Code, Hermes, ZCode, QoderWork, WorkBuddy. Other agents (including exported ChatGPT / Gemini chat logs) can be connected via JSONL / Markdown / SQLite custom sources — no code changes needed.
+10 built-in adapters: Codex, Claude Code, Hermes, WorkBuddy, Cursor, QClaw, ZCode, QoderWork, CodePilot, and Marvis. Other agents can be connected via JSONL / Markdown / SQLite custom sources.
 
 **How do I search all AI conversations on my machine?**
 After launching, type keywords in the search box. Supports AND / OR / NOT, `"exact phrases"`, parentheses, and mixed CJK/Latin; filter by agent, time range, status, and tags. Select conversations to batch-export Markdown / JSONL or add to a project.
@@ -233,7 +254,7 @@ Python 3.10+ (standard library only, no `pip install`), Windows / macOS; or just
 
 ```
 server.py           # Backend: HTTP server + indexing + search + daily review
-source_adapters.py  # Data source adapters (6 built-in + custom source framework)
+source_adapters.py  # Data source adapters (10 built-in + custom source framework)
 static/
   app.js            # Frontend logic
   index.html        # Page structure

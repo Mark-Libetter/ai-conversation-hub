@@ -42,10 +42,14 @@ const SOURCE_LABELS = {
   codex: "Codex",
   workbuddy: "WorkBuddy",
   claude: "Claude Code",
+  cursor: "Cursor",
+  qclaw: "QClaw",
   qoderwork: "QoderWork",
   zcode: "ZCode",
+  codepilot: "CodePilot",
+  marvis: "Marvis",
 };
-const EXTRA_SOURCES = ["claude", "qoderwork", "zcode"];
+const EXTRA_SOURCES = ["claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
@@ -102,24 +106,16 @@ function syncSourceControls(sources = {}) {
   document.querySelectorAll("#agentSwitcher .source-row[data-source]").forEach((row) => {
     const source = row.dataset.source;
     if (source === "all") return;
-    // 后端没有的源：隐藏按钮（动态跟随后端实际启用的源）
-    if (!(source in sources)) {
+    const enabled = source in sources && sources[source]?.enabled !== false;
+    // The switchboard lists active sources only; enable/disable belongs in Settings.
+    if (!enabled) {
       row.style.display = "none";
+      row.querySelector("[data-source-enabled]")?.remove();
       return;
     }
     row.style.display = "";
-    let checkbox = row.querySelector("[data-source-enabled]");
-    if (!checkbox) {
-      checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.dataset.sourceEnabled = source;
-      checkbox.setAttribute("aria-label", `启用 ${SOURCE_LABELS[source] || source}`);
-      row.prepend(checkbox);
-    }
-    const enabled = sources[source]?.enabled !== false;
-    checkbox.checked = enabled;
-    checkbox.disabled = false;
-    row.classList.toggle("source-disabled", !enabled);
+    row.querySelector("[data-source-enabled]")?.remove();
+    row.classList.remove("source-disabled");
   });
   document.querySelectorAll("#searchAgentFilter option").forEach((option) => {
     if (option.value === "all") return;
@@ -1073,8 +1069,8 @@ function renderDaily(data) {
       seenKeys.add(key);
     };
     if (focusEntry.text) add(focusEntry, focusEntry.text);
-    unfinishedList.slice(0, 4).forEach((it) => add(it, summaryItemParts(it, "unfinished").title || "待继续"));
-    achievements.slice(0, 3).forEach((it) => add(it, summaryItemParts(it, "achievement").title || "已完成"));
+    unfinishedList.slice(0, 2).forEach((it) => add(it, summaryItemParts(it, "unfinished").title || "待继续"));
+    achievements.slice(0, 1).forEach((it) => add(it, summaryItemParts(it, "achievement").title || "已完成"));
     const totalItems = achievements.length + unfinishedList.length;
     const itemLi = (it) => {
       const hasMsg = !!(it.last_user || it.last_reply);
@@ -1208,7 +1204,7 @@ function syncControls() {
   if (moreFilters) {
     const activeCount = (state.workspace !== "all" ? 1 : 0) + (state.nativeProject !== "all" ? 1 : 0);
     moreFilters.classList.toggle("has-value", activeCount > 0);
-    moreFilters.querySelector("summary").textContent = activeCount ? `更多筛选 · ${activeCount}` : "更多筛选";
+    moreFilters.querySelector("summary").textContent = activeCount ? `筛选 · ${activeCount}` : "筛选";
   }
   renderTagChips();
   renderWorkspaceHeading();
@@ -1649,25 +1645,25 @@ function renderDetail(data) {
   });
 
   const link = fragment.querySelector(".open-link");
-  if (item.source === "codex") {
-    link.href = `codex://threads/${encodeURIComponent(item.id)}`;
-    link.textContent = "在 Codex 中打开";
-  } else if (item.source === "hermes") {
-    link.href = `hermes://session/${encodeURIComponent(item.id)}`;
-    link.textContent = "在 Hermes 中打开";
-  } else if (item.source === "claude" && !item.source_kind.includes("metadata-only")) {
-    link.href = "#";
-    link.textContent = "复制 Claude 续接命令";
-    link.addEventListener("click", async (event) => {
-      event.preventDefault();
-      await navigator.clipboard.writeText(`claude --resume ${item.id}`);
-      showToast("已复制 Claude 续接命令");
-    });
-  } else if (item.source === "workbuddy") {
-    link.href = "workbuddy://";
-    link.textContent = "在 WorkBuddy 中打开";
-  } else {
+  const launchNote = fragment.querySelector(".launch-note");
+  const target = (data.launch_targets || [])[0];
+  if (!target) {
     link.hidden = true;
+    launchNote.textContent = "该来源暂未提供安全、可验证的续接方式";
+  } else {
+    link.textContent = target.label;
+    launchNote.textContent = `${target.exact ? "精确续接" : "仅打开客户端"} · ${target.note || ""}`;
+    launchNote.classList.toggle("exact", !!target.exact);
+    if (target.kind === "copy_command") {
+      link.href = "#";
+      link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await navigator.clipboard.writeText(target.value);
+        showToast("恢复命令已复制");
+      });
+    } else {
+      link.href = target.href;
+    }
   }
 
   const overviewRows = [
@@ -2903,6 +2899,7 @@ async function boot() {
     _log("获取令牌…");
     await loadSetupStatus({ openIfRequired: true });
     _log("检查数据源…");
+    await waitForIndexReady();
     readUrlState();
     setView(state.view, { sync: false });
     _log("加载对话…");
@@ -2918,6 +2915,23 @@ async function boot() {
   } catch (error) {
     showToast(error.message);
   }
+}
+
+async function waitForIndexReady() {
+  const deadline = Date.now() + 60000;
+  let lastState = null;
+  while (Date.now() < deadline) {
+    const health = await api("/api/health");
+    lastState = health.index || {};
+    if (lastState.status === "ready") return health;
+    if (lastState.status === "error") {
+      throw new Error(`本地索引初始化失败：${lastState.error || "未知错误"}`);
+    }
+    $("#resultCount").textContent = "正在建立本地索引…";
+    list.innerHTML = `<div class="index-loading"><span></span><strong>正在读取本地对话</strong><small>页面已经就绪，索引完成后会自动显示结果</small></div>`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  throw new Error(`本地索引等待超时（当前：${lastState?.status || "未知"}）`);
 }
 
 boot();
