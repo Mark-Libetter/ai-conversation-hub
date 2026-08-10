@@ -10,6 +10,9 @@
   --teal-soft: #dce9e4;
   --teal-pale: #edf4f1;
   --hermes: #a65c3c;
+  --qoder: #3b6ea5;
+  --qodercn: #2f8f6b;
+  --qwenworkcn: #b0782a;
   --codex: #168c91;
   --workbuddy: #7653a6;
   --danger: #a45045;
@@ -324,6 +327,9 @@ body.sidebar-collapsed .utility-icon { display: grid; }
   background: var(--ink);
 }
 .source-dot.hermes { background: var(--hermes); }
+.source-dot.qoder { background: var(--qoder); }
+.source-dot.qodercn { background: var(--qodercn); }
+.source-dot.qwenworkcn { background: var(--qwenworkcn); }
 .source-dot.codex { background: var(--codex); }
 .source-dot.workbuddy { background: var(--workbuddy); }
 .source-dot.claude { background: #b86f52; }
@@ -571,6 +577,9 @@ body.resizing-detail .detail-pane { pointer-events: none; }
   background: var(--teal-soft); color: var(--ink-2);
 }
 .brief-source.src-hermes { background: rgba(166,92,60,.14); color: var(--hermes); }
+.brief-source.src-qoder { background: rgba(59,110,165,.14); color: var(--qoder); }
+.brief-source.src-qodercn { background: rgba(47,143,107,.14); color: var(--qodercn); }
+.brief-source.src-qwenworkcn { background: rgba(176,120,42,.14); color: var(--qwenworkcn); }
 .brief-source.src-codex { background: rgba(22,140,145,.14); color: var(--codex); }
 .brief-source.src-workbuddy { background: rgba(118,83,166,.14); color: var(--workbuddy); }
 .brief-source.src-claude { background: rgba(202,113,60,.14); color: #ca713c; }

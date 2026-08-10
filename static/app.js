@@ -48,8 +48,11 @@ const SOURCE_LABELS = {
   zcode: "ZCode",
   codepilot: "CodePilot",
   marvis: "Marvis",
+  qoder: "Qoder",
+  qodercn: "QoderCN",
+  qwenworkcn: "千问办公",
 };
-const EXTRA_SOURCES = ["claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis"];
+const EXTRA_SOURCES = ["claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis", "qoder", "qodercn", "qwenworkcn"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);
@@ -1069,8 +1072,8 @@ function renderDaily(data) {
       seenKeys.add(key);
     };
     if (focusEntry.text) add(focusEntry, focusEntry.text);
-    unfinishedList.slice(0, 2).forEach((it) => add(it, summaryItemParts(it, "unfinished").title || "待继续"));
-    achievements.slice(0, 1).forEach((it) => add(it, summaryItemParts(it, "achievement").title || "已完成"));
+    unfinishedList.slice(0, 3).forEach((it) => add(it, summaryItemParts(it, "unfinished").title || "待继续"));
+    achievements.slice(0, 2).forEach((it) => add(it, summaryItemParts(it, "achievement").title || "已完成"));
     const totalItems = achievements.length + unfinishedList.length;
     const itemLi = (it) => {
       const hasMsg = !!(it.last_user || it.last_reply);

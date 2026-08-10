@@ -1557,6 +1557,7 @@ def launch_targets_for(item: Conversation) -> list[dict[str, Any]]:
         }]
     app_links = {
         "hermes": ("Hermes", "hermes://"),
+        "qoder": ("Qoder", "qoder://"),  # 注册表已验证的 URL Protocol；仅打开客户端
         "cursor": ("Cursor", "cursor://"),
         "qclaw": ("QClaw", "qclaw://"),
         "marvis": ("Marvis", "marvis://"),

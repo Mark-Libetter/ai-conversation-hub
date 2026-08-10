@@ -160,7 +160,8 @@ class InstantIndexTests(unittest.TestCase):
 class AdapterRegistryTests(unittest.TestCase):
     def test_all_bundled_loaders_are_registered(self) -> None:
         expected = {
-            "claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis"
+            "claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis",
+            "qoder", "qodercn", "qwenworkcn",
         }
         self.assertEqual(expected, set(source_adapters.EXTRA_SOURCES))
         self.assertEqual(expected, set(source_adapters.LOADERS))
