@@ -3024,6 +3024,12 @@ async function boot() {
     syncControls();
     await loadConversations();
     _log("完成");
+    // 深链（?conversationSource=&conversation=）直接展开详情，
+    // 让外部跳转（handoff 包、收藏链接）一步落到续接按钮
+    if (state.selected) {
+      setView("find", { sync: false });
+      await openDetail(state.selected.source, state.selected.id);
+    }
     if (state.view === "daily") {
       await loadDaily();
     } else {
