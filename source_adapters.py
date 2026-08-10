@@ -406,10 +406,10 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
                 return True, f"Qoder 系 IDE quest 索引 · {count} 组历史"
             return False, "未找到 lingma localHistory 索引"
         if source == "qwenworkcn":
-            files = list(path.glob("workspace/*/conversations.json")) if path.is_dir() else []
+            files = _claude_transcript_files(path) if path.is_dir() else []
             if files:
-                return True, f"千问办公 CLI · {len(files)} 个工作区"
-            return False, "未找到 workspace/*/conversations.json"
+                return True, f"千问办公 CLI · {len(files)} 个会话文件"
+            return False, "未找到 projects 下的会话 JSONL"
     except (OSError, sqlite3.DatabaseError):
         return False, "读取失败"
     return False, "未知来源"
@@ -484,11 +484,7 @@ def estimate_conversations(source: str, path: Path | None) -> int:
         if source in {"qoder", "qodercn"}:
             return len(_quest_sessions_from_vscdb(path))
         if source == "qwenworkcn":
-            total = 0
-            for conv_file in path.glob("workspace/*/conversations.json"):
-                data = json_value(conv_file.read_text(encoding="utf-8", errors="replace"), {})
-                total += len(data) if isinstance(data, dict) else 0
-            return total
+            return len(_claude_transcript_files(path))
     except (OSError, sqlite3.DatabaseError, ValueError, TypeError):
         return 0
     return 0
@@ -944,7 +940,9 @@ def _load_claude_history(path: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _load_claude(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+def _load_claude(
+    path: Path, source: str = "claude"
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     items_by_id: dict[str, dict[str, Any]] = {}
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
     history = _load_claude_history(path)
@@ -968,11 +966,11 @@ def _load_claude(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
                     }
                 ]
             item = conversation(
-                "claude",
+                source,
                 session_id,
                 index_info.get("title")
                 or history_info.get("title")
-                or f"Claude 超大会话 {session_id[:8]}",
+                or f"{SOURCE_LABELS.get(source, 'Claude')} 超大会话 {session_id[:8]}",
                 messages,
                 cwd=history_info.get("cwd") or index_info.get("cwd") or "",
                 created_at=(
@@ -1065,7 +1063,7 @@ def _load_claude(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
         title = title or str(index_info.get("title") or history_info.get("title") or "")
         model = model or str(index_info.get("model") or "")
         record = conversation(
-            "claude",
+            source,
             session_id,
             title,
             messages,
@@ -1086,7 +1084,7 @@ def _load_claude(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
         index_info = session_indexes.get(session_id, {})
         messages = list(info["messages"])
         items_by_id[session_id] = conversation(
-            "claude",
+            source,
             session_id,
             index_info.get("title") or info["title"],
             messages,
@@ -1113,7 +1111,7 @@ def _load_claude(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
             else []
         )
         items_by_id[session_id] = conversation(
-            "claude",
+            source,
             session_id,
             info["title"] or f"Claude 会话 {session_id[:8]}",
             messages,
@@ -1916,6 +1914,25 @@ def _load_qodercn(path: Path):
 
 
 def _load_qwenworkcn(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    # 千问办公会话与 Claude Code 同构（projects/<编码目录>/<会话>.jsonl），复用其解析器
+    items, messages_by_id = _load_claude(path, "qwenworkcn")
+    # 千问办公 CLI 会在用户消息前缀注入"当前目录；"，展示标题时剥掉（与客户端一致）
+    prefix = re.compile(r"^[A-Za-z]:\\[^；;\n]+[；;]\s*")
+    kept: list[dict[str, Any]] = []
+    for item in items:
+        for key in ("title", "preview"):
+            cleaned = prefix.sub("", item.get(key) or "")
+            if cleaned:
+                item[key] = cleaned
+        # 跳过客户端自动注入的记忆反思会话（非真人对话）
+        if item["title"].startswith("Target file this round:"):
+            messages_by_id.pop(item["id"], None)
+            continue
+        kept.append(item)
+    return kept, messages_by_id
+
+
+def _load_qwenworkcn_legacy(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
     for conv_file in sorted(path.glob("workspace/*/conversations.json")):
