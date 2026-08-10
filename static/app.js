@@ -1248,6 +1248,10 @@ async function loadSourceHealth() {
     `${healthy} 个适配器健康 · ${warnings} 个需关注 · 核心来源优先验收`;
   $("#sourceHealth").innerHTML = Object.entries(data.sources).map(([source, item]) => `
     <div class="health-row">
+      <label class="health-toggle" title="停用后不再索引与显示该来源，可随时重新启用">
+        <input type="checkbox" data-source-enabled="${source}" ${item.enabled ? "checked" : ""}>
+        <span>启用</span>
+      </label>
       <strong>${escapeHtml(item.label || SOURCE_LABELS[source] || source)}</strong>
       <span class="health-state ${item.status === "healthy" ? "ok" : "missing"}">${
         !item.enabled ? "未启用" : ({
@@ -2328,6 +2332,15 @@ $("#agentSwitcher").addEventListener("click", (event) => {
   const button = event.target.closest("[data-source]");
   if (!button) return;
   switchSource(button.dataset.source);
+});
+
+// 设置页「数据源质量报告」里的启用开关：复用侧栏同一套开关逻辑
+$("#sourceHealth").addEventListener("click", (event) => {
+  const checkbox = event.target.closest("[data-source-enabled]");
+  if (!checkbox) return;
+  setSourceEnabled(checkbox)
+    .then(() => loadSourceHealth().catch(() => {}))
+    .catch((error) => showToast(error.message));
 });
 
 $("#searchAgentFilter").addEventListener("change", (event) => {

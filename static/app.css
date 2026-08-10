@@ -1704,7 +1704,7 @@ body.resizing-project-columns { cursor: col-resize; user-select: none; }
 .source-health-card h3 { margin: 0; font-size: 13px; }
 .source-health-card p { margin: 0; color: var(--muted); font-size: 10px; }
 .source-health { margin-top: 13px; }
-.health-row { display: grid; grid-template-columns: 100px 80px minmax(0,1fr) auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); align-items: center; font-size: 10px; }
+.health-row { display: grid; grid-template-columns: auto 100px 80px minmax(0,1fr) auto; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); align-items: center; font-size: 10px; }
 .health-row code { overflow: hidden; color: var(--muted); font-family: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .health-state.ok { color: var(--codex); }.health-state.missing { color: var(--danger); }
 
@@ -2169,7 +2169,7 @@ body.resizing-project-columns { cursor: col-resize; user-select: none; }
   .model-library-tools { grid-template-columns: 1fr; }
   .model-library-row { grid-template-columns: minmax(0,1fr) 65px; }
   .model-library-row > span:last-child { display: none; }
-  .health-row { grid-template-columns: 80px 55px 1fr; }
+  .health-row { grid-template-columns: auto 80px 55px 1fr; }
   .health-row code { grid-column: 1/-1; }
   .project-daily-template { grid-template-columns: 1fr; }
   .project-daily-story { grid-template-columns: 1fr; }
@@ -3170,7 +3170,7 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
 .more-filters summary::after { content: "▾"; margin-left: 6px; font-size: 9px; opacity: .7; }
 .more-filters.has-value summary { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .more-filters-panel {
-  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0;
+  position: absolute; z-index: 40; top: calc(100% + 6px); right: 0;
   display: grid; gap: 10px; padding: 12px; min-width: 230px;
   border: 1px solid var(--line-dark); border-radius: 10px;
   background: var(--paper-2); box-shadow: 0 6px 18px rgba(23,63,59,.14);
@@ -3246,3 +3246,10 @@ html[data-theme]:not([data-theme="archive"]) .settings-dialog::backdrop {
 .tags-field-head { margin: 0 0 6px; }
 .note-block .save-state { font-size: 10px; }
 .filter-actions #tagFilter { width: 132px; }
+
+.health-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.health-toggle input { accent-color: var(--ink); cursor: pointer; }
+
+@media (max-width: 840px) {
+  .more-filters-panel { right: auto; left: 0; }
+}
