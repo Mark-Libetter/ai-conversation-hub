@@ -226,15 +226,25 @@ def default_candidates(source: str) -> list[Path]:
         return [home / ".zcode" / "cli" / "db" / "db.sqlite"]
     if source == "codepilot":
         return [
+            home / ".codepilot" / "codepilot.db",
             home / ".codepilot" / "chat.db",
             home / ".codepilot" / "data.db",
             application_support / "CodePilot" / "chat.db",
         ]
     if source == "marvis":
-        return [
+        candidates = [
             home / ".marvis" / "state.db",
             application_support / "Marvis" / "state.db",
         ]
+        tencent_user = application_support / "Tencent" / "Marvis" / "User"
+        if tencent_user.is_dir():
+            # 多用户目录：真实用户库通常更大，排前面；default_user 空库垫底
+            candidates.extend(sorted(
+                tencent_user.glob("*/database/data.db"),
+                key=lambda item: item.stat().st_size,
+                reverse=True,
+            ))
+        return candidates
     if source == "qoder":
         return [application_support / "Qoder" / "User" / "globalStorage" / "state.vscdb"]
     if source == "qodercn":

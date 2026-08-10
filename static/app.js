@@ -2346,6 +2346,15 @@ $("#sourceHealth").addEventListener("click", (event) => {
     .catch((error) => showToast(error.message));
 });
 
+// 弹窗点击遮罩（窗口外）自动关闭；首次运行必需配置除外
+document.querySelectorAll("dialog.settings-dialog").forEach((dlg) => {
+  dlg.addEventListener("click", (event) => {
+    if (event.target !== dlg) return;
+    if (dlg.id === "setupDialog" && dlg.dataset.required === "true") return;
+    dlg.close();
+  });
+});
+
 $("#searchAgentFilter").addEventListener("change", (event) => {
   switchSource(event.target.value, { preserveQuery: true });
 });
