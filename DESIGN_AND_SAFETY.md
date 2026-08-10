@@ -13,6 +13,26 @@ read-only (`mode=ro` plus `PRAGMA query_only`) and stores user-authored
 management data (favorites, tags, notes, daily metadata) separately in
 `hub_notes.sqlite`.
 
+## Continuation and memory boundaries
+
+- A continuation packet is generated only after an explicit user action. It is
+  a deterministic Markdown/JSON projection of at most 120 normalized
+  user/assistant messages; no cloud model is called.
+- Every extracted decision, next step, constraint, and artifact carries a
+  message evidence reference and content hash. Historical text is labelled as
+  untrusted context, never as fresh authorization.
+- The Hub never inserts a packet into another agent automatically and never
+  executes commands found in a conversation. Copy/download are the default
+  cross-agent transport.
+- Optional memory cards are user-authored, limited to 4,000 characters, stored
+  only in `hub_notes.sqlite`, included in backups, and excluded from packets by
+  default. Optimistic concurrency prevents one window from silently
+  overwriting a newer edit.
+- Native navigation is allow-listed. WorkBuddy receives only
+  `workbuddy://chat/<validated-id>`. ZCode is started with a verified
+  `ZCode.exe`, fixed `--open-workspace` arguments, and `shell=False`; the Hub
+  never edits protocol registrations.
+
 ## Search boundaries
 
 - Hermes: title, working directory, notes/tags, and user/assistant message text.

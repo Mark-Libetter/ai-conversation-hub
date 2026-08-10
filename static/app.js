@@ -1644,27 +1644,144 @@ function renderDetail(data) {
     setDetailOpen(false, { focusToggle: true });
   });
 
-  const link = fragment.querySelector(".open-link");
+  const launchTargetsRoot = fragment.querySelector(".launch-targets");
   const launchNote = fragment.querySelector(".launch-note");
-  const target = (data.launch_targets || [])[0];
-  if (!target) {
-    link.hidden = true;
+  const launchTargets = data.launch_targets || [];
+  if (!launchTargets.length) {
+    launchTargetsRoot.hidden = true;
     launchNote.textContent = "该来源暂未提供安全、可验证的续接方式";
   } else {
-    link.textContent = target.label;
-    launchNote.textContent = `${target.exact ? "精确续接" : "仅打开客户端"} · ${target.note || ""}`;
+    launchTargets.forEach((target, index) => {
+      const isLink = ["deep_link", "app_link"].includes(target.kind);
+      const control = document.createElement(isLink ? "a" : "button");
+      control.className = `button ${index === 0 ? "primary" : "secondary"}`;
+      control.textContent = target.label;
+      if (isLink) {
+        control.href = target.href;
+      } else {
+        control.type = "button";
+      }
+      if (target.kind === "copy_command") {
+        control.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(target.value);
+          showToast("恢复命令已复制");
+        });
+      }
+      if (target.kind === "server_launch") {
+        control.addEventListener("click", async () => {
+          control.disabled = true;
+          try {
+            await api("/api/launch", {
+              method: "POST",
+              body: JSON.stringify({
+                source: item.source,
+                conversation_id: item.id,
+                target_id: target.target_id,
+              }),
+            });
+            showToast("已交给 ZCode 打开工作区");
+          } catch (error) {
+            showToast(error.message);
+          } finally {
+            control.disabled = false;
+          }
+        });
+      }
+      launchTargetsRoot.append(control);
+    });
+    const target = launchTargets[0];
+    const capability = target.exact
+      ? "精确到会话"
+      : target.kind === "server_launch"
+        ? "工作区级续接"
+        : "仅打开客户端";
+    launchNote.textContent = `${capability} · ${target.note || ""}`;
     launchNote.classList.toggle("exact", !!target.exact);
-    if (target.kind === "copy_command") {
-      link.href = "#";
-      link.addEventListener("click", async (event) => {
-        event.preventDefault();
-        await navigator.clipboard.writeText(target.value);
-        showToast("恢复命令已复制");
-      });
-    } else {
-      link.href = target.href;
-    }
   }
+
+  const memoryInput = fragment.querySelector(".memory-card-input");
+  const includeMemory = fragment.querySelector(".include-memory");
+  const memoryState = fragment.querySelector(".memory-save-state");
+  const continuationState = fragment.querySelector(".continuation-state");
+  const continuationPreview = fragment.querySelector(".continuation-preview");
+  const continuationOutput = fragment.querySelector(".continuation-output");
+  const copyContinuation = fragment.querySelector(".copy-continuation");
+  const downloadContinuation = fragment.querySelector(".download-continuation");
+  const saveMemoryButton = fragment.querySelector(".save-memory-card");
+  const generateContinuation = fragment.querySelector(".generate-continuation");
+  const savedMemory = data.continuation_memory || { body: "", updated_at: 0 };
+  let memorySavedBody = savedMemory.body || "";
+  let memoryUpdatedAt = Number(savedMemory.updated_at || 0);
+  let continuationResult = null;
+  memoryInput.value = memorySavedBody;
+  memoryState.textContent = memorySavedBody ? "已保存在本机" : "尚未保存记忆卡";
+  memoryInput.addEventListener("input", () => {
+    memoryState.textContent = memoryInput.value.trim() === memorySavedBody
+      ? (memorySavedBody ? "已保存在本机" : "尚未保存记忆卡")
+      : "有未保存修改";
+  });
+  saveMemoryButton.addEventListener("click", async () => {
+    saveMemoryButton.disabled = true;
+    memoryState.textContent = "保存中…";
+    try {
+      const result = await api("/api/continuation-memory", {
+        method: "POST",
+        body: JSON.stringify({
+          source: item.source,
+          conversation_id: item.id,
+          body: memoryInput.value,
+          expected_updated_at: memoryUpdatedAt,
+        }),
+      });
+      memorySavedBody = result.body || "";
+      memoryUpdatedAt = Number(result.updated_at || 0);
+      memoryInput.value = memorySavedBody;
+      memoryState.textContent = memorySavedBody ? "已保存在本机" : "记忆卡已清空";
+      showToast(memorySavedBody ? "记忆卡已保存" : "记忆卡已清空");
+    } catch (error) {
+      memoryState.textContent = error.message;
+    } finally {
+      saveMemoryButton.disabled = false;
+    }
+  });
+  generateContinuation.addEventListener("click", async () => {
+    if (includeMemory.checked && memoryInput.value.trim() !== memorySavedBody) {
+      showToast("请先保存记忆卡，再选择附带");
+      return;
+    }
+    generateContinuation.disabled = true;
+    continuationState.textContent = "生成中…";
+    try {
+      continuationResult = await api(
+        `/api/continuation/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}`
+        + `?memory=${includeMemory.checked ? "1" : "0"}`
+      );
+      continuationOutput.value = continuationResult.markdown || "";
+      continuationPreview.hidden = false;
+      copyContinuation.hidden = false;
+      downloadContinuation.hidden = false;
+      const fingerprint = continuationResult.packet?.content_sha256?.slice(0, 10) || "";
+      continuationState.textContent = `已生成 · ${fingerprint}`;
+    } catch (error) {
+      continuationState.textContent = error.message;
+    } finally {
+      generateContinuation.disabled = false;
+    }
+  });
+  copyContinuation.addEventListener("click", async () => {
+    if (!continuationResult) return;
+    await navigator.clipboard.writeText(continuationResult.markdown || "");
+    showToast("接续包 Markdown 已复制");
+  });
+  downloadContinuation.addEventListener("click", () => {
+    if (!continuationResult) return;
+    const filename = `${item.source}-${item.id}-continuation.json`.replace(/[<>:"/\\|?*]/g, "_");
+    downloadText(
+      filename,
+      JSON.stringify(continuationResult.packet, null, 2),
+      "application/json;charset=utf-8",
+    );
+  });
 
   const overviewRows = [
     ["最初目标", data.overview.goal || "未提取到"],

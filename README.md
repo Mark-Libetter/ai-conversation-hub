@@ -10,7 +10,7 @@
 If you work across several AI coding assistants, your conversations live in each one separately. The Hub makes the primary path three steps: **search → select → continue**.
 
 - **Find**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`)
-- **Continue**: exact Codex deep links, exact Claude Code resume commands, and honestly labeled app-only fallbacks where a provider exposes no verifiable session protocol
+- **Continue**: exact Codex and WorkBuddy session links, exact Claude Code resume commands, a safe ZCode workspace launcher, and a deterministic handoff packet that any agent can consume
 - **Review**: a fact-based daily recap — overview stats, project progress grouped by workspace, your own status markers (generated offline, no model calls) — so you close each day knowing what actually got done
 - **Organize**: check related conversations into named projects with status, notes, and task lists — so the work you did turns into something you can revisit
 
@@ -44,7 +44,8 @@ As a side note, this is the author's first vibe coding project. Bug reports are 
 | **Local-first** | Runs entirely on your machine; server binds only to `127.0.0.1`; nothing goes to the cloud |
 | **Zero dependencies** | Pure Python standard library, no `pip install` needed |
 | **Offline-capable** | Search and daily review work fully offline, no model required |
-| **Honest capability labels** | Exact resume, copied command, and app-only launch are shown as different capabilities |
+| **Honest capability labels** | Exact session, workspace-level, copied command, and app-only actions are shown as different capabilities |
+| **Explicit memory** | Optional memory cards are local, editable, reversible, and excluded from handoff packets by default |
 
 ## Quick start
 
@@ -89,6 +90,7 @@ Open `http://127.0.0.1:8765` in your browser.
 - Click any conversation to expand full content
 - Add favorites ★, tags, notes, status (in-progress / done)
 - Search within the current conversation via the top box
+- Click **Generate handoff packet** to copy traceable Markdown into another agent; the optional local memory card is off by default
 
 ![Detail](assets/guide-detail.png)
 
@@ -145,9 +147,11 @@ Double-click `start-macos.command`.
 | Source | Primary action | Exact session | Notes |
 |---|---|---:|---|
 | **Codex** | `codex://threads/<id>` | Yes | Verified against the installed Codex desktop protocol |
+| **WorkBuddy** | `workbuddy://chat/<id>` | Yes | Uses WorkBuddy's validated task deep-link grammar |
 | **Claude Code** | Copy `claude --resume <id>` | Yes | Copied only; the Hub never executes the command |
-| **Hermes / WorkBuddy / Cursor / QClaw / ZCode / Marvis** | Open app | No | No verifiable session-level protocol is claimed |
-| **QoderWork / CodePilot / custom** | Copy ID / export | No | Safe fallback; no guessed private protocol |
+| **ZCode** | Launch `ZCode.exe --open-workspace <cwd>` | Workspace | Bypasses a conflicting `zcode://` registration; no session-level protocol is claimed |
+| **Hermes / Cursor / QClaw / Marvis** | Open app | No | No verifiable session-level protocol is claimed |
+| **QoderWork / CodePilot / custom** | Handoff packet / copy ID / export | No | Safe fallback; no guessed private protocol |
 
 **Want to connect another agent?** Supports JSONL / Markdown / SQLite custom formats, no code changes needed — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -158,6 +162,12 @@ Double-click `start-macos.command`.
 - Filters: time range, status, workspace, favorites-only
 - Conversation detail: overview, favorites, tags, notes, Markdown export
 - Batch export of selected conversations
+
+### Cross-agent continuation
+- Deterministic Markdown + JSON handoff packets with goal, latest request/response, decisions, next steps, constraints, artifacts, and evidence hashes
+- Generated locally on demand; no model call, cloud upload, automatic prompt injection, or command execution
+- Optional per-conversation memory card stored in `hub_notes.sqlite`; disabled in packets until the user explicitly checks it
+- CLI/MCP access through `python hub_agent.py handoff <source> <id>` and the `hub_handoff` tool
 
 ### Projects
 - Group related conversations together for review and export

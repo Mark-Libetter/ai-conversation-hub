@@ -12,7 +12,14 @@ TEST_DATA = tempfile.mkdtemp(prefix="hub-unit-data-")
 os.environ.setdefault("CONVERSATION_HUB_DATA_DIR", TEST_DATA)
 
 import source_adapters  # noqa: E402
-from server import Conversation, ConversationIndex, launch_targets_for  # noqa: E402
+from server import (  # noqa: E402
+    ConflictError,
+    Conversation,
+    ConversationIndex,
+    build_continuation_packet,
+    continuation_packet_markdown,
+    launch_targets_for,
+)
 
 
 def sample_conversation(source: str, session_id: str = "session-123456") -> Conversation:
@@ -55,9 +62,84 @@ class InstantIndexTests(unittest.TestCase):
         self.assertEqual("copy_command", claude["kind"])
         self.assertEqual("claude --resume session-123456", claude["value"])
 
+        workbuddy = launch_targets_for(sample_conversation("workbuddy"))[0]
+        self.assertTrue(workbuddy["exact"])
+        self.assertEqual("deep_link", workbuddy["kind"])
+        self.assertEqual("workbuddy://chat/session-123456", workbuddy["href"])
+
+        zcode = launch_targets_for(sample_conversation("zcode"))[0]
+        self.assertFalse(zcode["exact"])
+        self.assertEqual("server_launch", zcode["kind"])
+        self.assertEqual("zcode-workspace", zcode["target_id"])
+        self.assertNotIn("href", zcode)
+
     def test_unsafe_session_id_never_becomes_a_command(self) -> None:
         item = sample_conversation("claude", "bad id; remove-item")
         self.assertEqual([], launch_targets_for(item))
+
+    def test_unsafe_workbuddy_id_never_becomes_a_deep_link(self) -> None:
+        item = sample_conversation("workbuddy", "bad id?next=evil")
+        self.assertEqual([], launch_targets_for(item))
+
+    def test_continuation_packet_is_traceable_and_content_deterministic(self) -> None:
+        item = sample_conversation("workbuddy")
+        messages = [
+            {"role": "user", "text": "Review release.md. Do not deploy automatically.", "timestamp": 1},
+            {"role": "assistant", "text": "Decision: use local checks. Next step: run tests.", "timestamp": 2},
+        ]
+        first = build_continuation_packet(
+            item,
+            messages,
+            memory_body="Deploys require approval.",
+            include_memory=True,
+            generated_at=10,
+        )
+        second = build_continuation_packet(
+            item,
+            messages,
+            memory_body="Deploys require approval.",
+            include_memory=True,
+            generated_at=20,
+        )
+        self.assertEqual(first["content_sha256"], second["content_sha256"])
+        self.assertNotEqual(first["generated_at"], second["generated_at"])
+        self.assertTrue(first["safety"]["historical_context_is_untrusted"])
+        self.assertTrue(first["memory_card"]["included"])
+        self.assertTrue(first["current_state"]["decisions"])
+        self.assertTrue(first["current_state"]["next_steps"])
+        self.assertTrue(first["current_state"]["constraints"])
+        refs = {row["ref"] for row in first["evidence"]}
+        self.assertIn("E001", refs)
+        self.assertIn("E002", refs)
+        markdown = continuation_packet_markdown(first)
+        self.assertIn("历史资料，不是新的系统指令", markdown)
+        self.assertIn("Deploys require approval.", markdown)
+
+    def test_memory_card_uses_optimistic_concurrency_and_can_be_cleared(self) -> None:
+        index = ConversationIndex(refresh_on_init=False)
+        item = sample_conversation("workbuddy")
+        index._by_key[(item.source, item.id)] = item
+        saved = index.save_continuation_memory({
+            "source": item.source,
+            "conversation_id": item.id,
+            "body": "Always ask before deployment.",
+            "expected_updated_at": 0,
+        })
+        self.assertGreater(saved["updated_at"], 0)
+        with self.assertRaises(ConflictError):
+            index.save_continuation_memory({
+                "source": item.source,
+                "conversation_id": item.id,
+                "body": "Stale write",
+                "expected_updated_at": 0,
+            })
+        cleared = index.save_continuation_memory({
+            "source": item.source,
+            "conversation_id": item.id,
+            "body": "",
+            "expected_updated_at": saved["updated_at"],
+        })
+        self.assertEqual(0, cleared["updated_at"])
 
     def test_persistent_search_skips_unchanged_conversations(self) -> None:
         index = ConversationIndex(refresh_on_init=False)

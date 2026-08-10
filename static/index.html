@@ -387,11 +387,37 @@
           </div>
         </section>
         <div class="detail-actions">
-          <a class="button primary open-link" href="#">在客户端打开</a>
+          <div class="launch-targets"></div>
           <button class="button secondary copy-id" type="button">复制 ID</button>
           <button class="button ghost export-conversation" type="button">导出 Markdown</button>
         </div>
         <p class="launch-note muted"></p>
+        <section class="continuation-block">
+          <div class="section-heading">
+            <div><h3>跨 Agent 接续</h3><p class="muted">生成可追溯的本地接续包，再粘贴给任意 Agent。</p></div>
+            <span class="continuation-state muted"></span>
+          </div>
+          <div class="continuation-actions">
+            <button class="button primary generate-continuation" type="button">生成接续包</button>
+            <button class="button secondary copy-continuation" type="button" hidden>复制 Markdown</button>
+            <button class="button ghost download-continuation" type="button" hidden>下载 JSON</button>
+          </div>
+          <div class="continuation-preview" hidden>
+            <textarea class="continuation-output" rows="9" readonly aria-label="接续包 Markdown"></textarea>
+            <p class="muted continuation-safety">历史内容不会被当成新授权；中心不会调用云端模型或自动执行。</p>
+          </div>
+          <details class="memory-card">
+            <summary>可选本地记忆卡 <span class="muted">默认不附带</span></summary>
+            <p class="muted">只写你确认过的长期偏好、规则或项目事实；可随时清空。</p>
+            <textarea class="memory-card-input" rows="5" maxlength="4000"
+              placeholder="例如：所有发布操作必须先征得我的确认。"></textarea>
+            <div class="memory-card-actions">
+              <label><input class="include-memory" type="checkbox"> 生成接续包时附带已保存的记忆卡</label>
+              <button class="button secondary save-memory-card" type="button">保存记忆卡</button>
+            </div>
+            <p class="memory-save-state muted"></p>
+          </details>
+        </section>
         <section class="overview-block">
           <h3>可追溯概览</h3><dl class="overview"></dl>
         </section>

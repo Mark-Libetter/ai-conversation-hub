@@ -848,13 +848,48 @@ mark { background: #e9dfad; color: var(--ink); }
   border-color: var(--ink);
   color: var(--ink);
 }
-.detail-actions { display: flex; gap: 7px; margin: 20px 0 26px; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 20px 0 26px; }
+.launch-targets { display: flex; flex-wrap: wrap; gap: 7px; }
+.launch-targets:empty { display: none; }
 .launch-note {
   margin: -18px 0 24px;
   font-size: 9px;
   line-height: 1.45;
 }
 .launch-note.exact { color: var(--codex); }
+.continuation-block {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.continuation-block .section-heading { gap: 12px; align-items: flex-start; }
+.continuation-block .section-heading h3 { margin: 0 0 5px; font-size: 11px; letter-spacing: .05em; }
+.continuation-block .section-heading p { margin: 0; font-size: 9px; line-height: 1.5; }
+.continuation-state { max-width: 118px; font-size: 8px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.continuation-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.continuation-preview { margin-top: 12px; }
+.continuation-output {
+  min-height: 150px;
+  border-color: var(--line-dark);
+  background: var(--paper-2);
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 9px;
+}
+.continuation-safety { margin: 6px 0 0; font-size: 8px; line-height: 1.5; }
+.memory-card { margin-top: 13px; border: 1px solid var(--line); background: var(--paper-2); }
+.memory-card summary { padding: 10px 12px; cursor: pointer; font-size: 10px; font-weight: 700; }
+.memory-card summary span { margin-left: 4px; font-size: 8px; font-weight: 400; }
+.memory-card > p { margin: 0; padding: 0 12px 9px; font-size: 9px; line-height: 1.55; }
+.memory-card-input { width: calc(100% - 24px); margin: 0 12px; background: var(--paper); font-size: 10px; }
+.memory-card-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px 0;
+}
+.memory-card-actions label { display: flex; gap: 6px; align-items: flex-start; font-size: 9px; line-height: 1.45; }
+.memory-card-actions input { flex: 0 0 auto; width: auto; margin-top: 2px; }
+.memory-save-state { margin: 0; padding: 7px 12px 10px; font-size: 8px; }
 .index-loading {
   min-height: 220px;
   display: grid;
