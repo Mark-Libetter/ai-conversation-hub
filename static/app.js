@@ -591,9 +591,12 @@ function sourceValues(group, fallback) {
   return fallback[state.source];
 }
 
+let lastRefreshedAt = 0;
+
 async function loadSummary() {
   const data = await api("/api/summary");
   state.summary = data;
+  lastRefreshedAt = data.refreshed_at || 0;
   $("#allCount").textContent = data.total;
   Object.keys(SOURCE_LABELS).forEach((source) => {
     const node = $(`#${source}Count`);
@@ -2354,6 +2357,30 @@ document.querySelectorAll("dialog.settings-dialog").forEach((dlg) => {
     dlg.close();
   });
 });
+
+// ---- 无感自动刷新：标签页回到前台或每 60 秒静默比对，数据有变才重载，不弹窗不跳滚动 ----
+async function silentAutoRefresh() {
+  try {
+    const data = await api("/api/summary");
+    if (!data || data.refreshed_at === lastRefreshedAt) return;
+    const scroller = document.querySelector(".app-workspace");
+    const top = scroller ? scroller.scrollTop : 0;
+    await Promise.all([
+      loadSummary(),
+      loadConversations(),
+      loadDaily().catch(() => {}),
+    ]);
+    if (scroller) scroller.scrollTop = top;
+  } catch {
+    // 静默失败：自动刷新只是尽力而为的增量增强
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) silentAutoRefresh();
+});
+setInterval(() => {
+  if (!document.hidden) silentAutoRefresh();
+}, 60_000);
 
 $("#searchAgentFilter").addEventListener("change", (event) => {
   switchSource(event.target.value, { preserveQuery: true });
