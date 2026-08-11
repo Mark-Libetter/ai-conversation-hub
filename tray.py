@@ -214,7 +214,13 @@ class Tray:
         self.nid.uID = 1
         self.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         self.nid.uCallbackMessage = WM_TRAYICON
-        self.nid.hIcon = user32.LoadIconW(None, IDI_APPLICATION)
+        # 优先用自家应用图标（青碧渐变对话气泡），缺失时回退系统默认
+        icon = None
+        icon_path = REPO / "packaging" / "app_icon.ico"
+        if icon_path.is_file():
+            # IMAGE_ICON=1, LR_LOADFROMFILE=0x10, LR_DEFAULTSIZE=0x40
+            icon = user32.LoadImageW(None, str(icon_path), 1, 0, 0, 0x0010 | 0x0040)
+        self.nid.hIcon = icon or user32.LoadIconW(None, IDI_APPLICATION)
         self.nid.szTip = "AI 对话中心 · 单击打开"
         shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
 
