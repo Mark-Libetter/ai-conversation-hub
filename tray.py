@@ -26,8 +26,11 @@ user32.DefWindowProcW.restype = ctypes.c_long  # LRESULT
 
 WM_USER = 0x0400
 WM_TRAYICON = WM_USER + 20
+WM_LBUTTONUP = 0x0202
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONUP = 0x0205
+WM_TIMER = 0x0113
+TIMER_OPEN = 1
 WM_DESTROY = 0x0002
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
 NIF_MESSAGE, NIF_ICON, NIF_TIP = 1, 2, 4
@@ -142,10 +145,18 @@ class Tray:
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         if msg == WM_TRAYICON:
-            if lparam == WM_LBUTTONDBLCLK:
+            if lparam == WM_LBUTTONUP:
+                # 单击打开；250ms 定时器吸收双击的第一下，避免开两次
+                user32.SetTimer(self.hwnd, TIMER_OPEN, 250, None)
+            elif lparam == WM_LBUTTONDBLCLK:
+                user32.KillTimer(self.hwnd, TIMER_OPEN)
                 open_center()
             elif lparam == WM_RBUTTONUP:
                 self._show_menu()
+            return 0
+        if msg == WM_TIMER and wparam == TIMER_OPEN:
+            user32.KillTimer(self.hwnd, TIMER_OPEN)
+            open_center()
             return 0
         if msg == WM_DESTROY:
             user32.PostQuitMessage(0)
@@ -204,7 +215,7 @@ class Tray:
         self.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         self.nid.uCallbackMessage = WM_TRAYICON
         self.nid.hIcon = user32.LoadIconW(None, IDI_APPLICATION)
-        self.nid.szTip = "AI 对话中心 · 双击打开"
+        self.nid.szTip = "AI 对话中心 · 单击打开"
         shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
 
         msg = wt.MSG()

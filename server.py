@@ -5384,6 +5384,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+def _spawn_tray() -> None:
+    # 服务启动即带起托盘（Windows）；tray 侧有单实例互斥，重复拉起会自动退出
+    if os.name != "nt":
+        return
+    try:
+        tray = Path(__file__).resolve().parent / "tray.py"
+        if not tray.is_file():
+            return
+        pyw = Path(sys.executable).with_name("pythonw.exe")
+        if not pyw.is_file():
+            pyw = Path(sys.executable)
+        subprocess.Popen([str(pyw), str(tray)], creationflags=0x00000008)
+    except Exception:  # noqa: BLE001 - 托盘拉起失败不影响主服务
+        pass
+
+
 def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
@@ -5403,6 +5419,7 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
         name="hub-initialize-runtime",
         daemon=True,
     ).start()
+    _spawn_tray()
     if open_browser:
         threading.Timer(0.15, lambda: webbrowser.open(url)).start()
     try:
