@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import socket
@@ -19,7 +20,7 @@ INSTANCE_PATH = DATA_DIR / "instance.json"
 
 def health(port: int) -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.5) as response:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=0.75) as response:
             payload = json.loads(response.read().decode("utf-8"))
             return (
                 response.status == 200
@@ -53,6 +54,13 @@ def remember_port(port: int) -> None:
 def running_port() -> int | None:
     """在默认端口段里找一个已经在跑、且数据目录一致的实例；没有则返回 None。"""
     for port in range(8765, 8796):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                pass
+            else:
+                continue
         if health(port):
             return port
     return None
@@ -105,7 +113,7 @@ def ensure_firewall_allowed() -> None:
     time.sleep(3)
 
 
-def launch() -> None:
+def launch(*, open_browser: bool = True) -> None:
     from server import run_server
 
     # 已有实例就复用：先认 instance.json 记住的端口，再扫默认端口段。
@@ -116,7 +124,6 @@ def launch() -> None:
 
     server_thread = None
     if not port:
-        ensure_firewall_allowed()
         port = free_port()
 
         # 线程内启动 server，不再 spawn 子进程（避免防火墙拦跨进程 TCP）
@@ -139,7 +146,8 @@ def launch() -> None:
             raise RuntimeError("AI 对话中心未能启动，请重新安装或查看日志。")
 
     remember_port(port)
-    webbrowser.open(f"http://127.0.0.1:{port}/")
+    if open_browser:
+        webbrowser.open(f"http://127.0.0.1:{port}/")
 
     # 复用已有实例时 server_thread 为 None：浏览器已打开，本进程直接退出即可。
     # 自己启动的实例才需要保持主进程存活（server 线程是 daemon）。
@@ -166,6 +174,13 @@ def _show_error(exc: Exception) -> None:
             input("\n按回车键退出…")
         except (EOFError, KeyboardInterrupt):
             pass
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, msg, "AI Conversation Hub 启动失败", 0x10)
+        except Exception:
+            pass
     else:  # 无控制台（macOS --windowed .app）：弹图形对话框，否则用户看不到任何错误
         try:
             import subprocess
@@ -180,4 +195,10 @@ def _show_error(exc: Exception) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="AI Conversation Hub desktop launcher")
+    parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically")
+    cli_args = parser.parse_args()
+    try:
+        launch(open_browser=not cli_args.no_open)
+    except Exception as exc:
+        _show_error(exc)

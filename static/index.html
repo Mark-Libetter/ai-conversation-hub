@@ -404,6 +404,21 @@
           <button class="button ghost export-conversation" type="button">导出 Markdown</button>
         </div>
         <p class="launch-note muted"></p>
+        <section class="review-block">
+          <div class="section-heading">
+            <div><h3>对话回顾卡</h3><p class="muted">本地提取已完成、决定、未完成、阻塞、提交和文件，保留原文证据。</p></div>
+            <span class="review-state muted"></span>
+          </div>
+          <div class="continuation-actions">
+            <button class="button secondary generate-review" type="button">生成回顾卡</button>
+            <button class="button secondary copy-review" type="button" hidden>复制 Markdown</button>
+            <button class="button ghost download-review" type="button" hidden>下载 JSON</button>
+          </div>
+          <div class="review-preview" hidden>
+            <textarea class="review-output" rows="12" readonly aria-label="对话回顾卡 Markdown"></textarea>
+            <p class="muted">固定规则、本机生成、不调用模型；历史内容不会被当成新授权。</p>
+          </div>
+        </section>
         <section class="continuation-block">
           <div class="section-heading">
             <div><h3>跨 Agent 接续</h3><p class="muted">生成可追溯的本地接续包，再粘贴给任意 Agent。</p></div>

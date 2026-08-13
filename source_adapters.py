@@ -246,9 +246,15 @@ def default_candidates(source: str) -> list[Path]:
             ))
         return candidates
     if source == "qoder":
-        return [application_support / "Qoder" / "User" / "globalStorage" / "state.vscdb"]
+        return [
+            application_support / "Qoder" / "SharedClientCache" / "cache" / "db" / "local.db",
+            application_support / "Qoder" / "User" / "globalStorage" / "state.vscdb",
+        ]
     if source == "qodercn":
-        return [application_support / "QoderCN" / "User" / "globalStorage" / "state.vscdb"]
+        return [
+            application_support / "QoderCN" / "SharedClientCache" / "cache" / "db" / "local.db",
+            application_support / "QoderCN" / "User" / "globalStorage" / "state.vscdb",
+        ]
     if source == "qwenworkcn":
         return [home / ".qwenworkcn"]
     return []
@@ -397,13 +403,22 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
             return valid, "ZCode 会话数据库" if valid else "数据库结构不匹配"
         if source in {"qoder", "qodercn"}:
             if not path.is_file():
-                return False, "state.vscdb 不存在"
+                return False, "Qoder 会话索引不存在"
             with readonly_db(path) as conn:
+                tables = {
+                    str(row[0])
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
+                if "chat_session" in tables:
+                    count = int(conn.execute("SELECT count(*) FROM chat_session").fetchone()[0])
+                    return True, f"Qoder 新版标题索引 · {count} 个会话"
+                if "ItemTable" not in tables:
+                    return False, "数据库结构不匹配"
                 count = int(conn.execute(
                     "SELECT count(*) FROM ItemTable WHERE key LIKE 'lingma.chat.localHistory.%'"
                 ).fetchone()[0])
             if count:
-                return True, f"Qoder 系 IDE quest 索引 · {count} 组历史"
+                return True, f"Qoder 旧版 quest 索引 · {count} 组历史"
             return False, "未找到 lingma localHistory 索引"
         if source == "qwenworkcn":
             files = _claude_transcript_files(path) if path.is_dir() else []
@@ -482,7 +497,7 @@ def estimate_conversations(source: str, path: Path | None) -> int:
                     ).fetchone()[0]
                 )
         if source in {"qoder", "qodercn"}:
-            return len(_quest_sessions_from_vscdb(path))
+            return len(_qoder_session_slots(source, path))
         if source == "qwenworkcn":
             return len(_claude_transcript_files(path))
     except (OSError, sqlite3.DatabaseError, ValueError, TypeError):
@@ -502,6 +517,21 @@ def configured_extra_sources(
         value = raw.get(source)
         value = value if isinstance(value, dict) else {}
         path = Path(str(value.get("path") or "")).expanduser() if value.get("path") else None
+        if source in {"qoder", "qodercn"}:
+            preferred = next(
+                (
+                    item
+                    for item in default_candidates(source)
+                    if "chat_session" in sqlite_tables(item)
+                ),
+                None,
+            )
+            configured_valid = validate_source(source, path)[0] if path else False
+            if preferred and (
+                not configured_valid
+                or (path is not None and path.name.casefold() == "state.vscdb")
+            ):
+                path = preferred
         if not path:
             path = next((item for item in default_candidates(source) if validate_source(source, item)[0]), None)
         valid, detail = validate_source(source, path) if path else (False, "未发现")
@@ -1820,19 +1850,108 @@ def _quest_sessions_from_vscdb(path: Path) -> list[dict[str, Any]]:
     return sorted(sessions.values(), key=lambda item: item["updated"], reverse=True)
 
 
-def _transcript_index(root: Path) -> dict[str, Path]:
+def _qoder_sessions_from_local_db(path: Path) -> list[dict[str, Any]]:
+    """Read Qoder's unencrypted session index; message bodies remain untouched/encrypted."""
+    sessions: list[dict[str, Any]] = []
+    with readonly_db(path) as conn:
+        columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(chat_session)")
+        }
+        if "session_id" not in columns:
+            return []
+        fields = (
+            "session_id", "session_title", "project_uri", "project_name",
+            "gmt_create", "gmt_modified", "session_type", "mode",
+        )
+        selected = ",".join(
+            field if field in columns else f"NULL AS {field}"
+            for field in fields
+        )
+        rows = conn.execute(
+            f"SELECT {selected} FROM chat_session ORDER BY gmt_modified DESC"
+        ).fetchall()
+    for row in rows:
+        session_id = str(row["session_id"] or "").strip()
+        if not session_id:
+            continue
+        sessions.append({
+            "id": session_id,
+            "title": redact(row["session_title"], 240),
+            "cwd": str(row["project_uri"] or ""),
+            "project_name": redact(row["project_name"], 120),
+            "created": epoch(row["gmt_create"]),
+            "updated": epoch(row["gmt_modified"]),
+            "session_type": redact(row["session_type"], 64),
+            "mode": redact(row["mode"], 64),
+            "index_kind": "shared-client-cache",
+        })
+    return sessions
+
+
+def _qoder_sessions_from_path(path: Path) -> list[dict[str, Any]]:
+    tables = sqlite_tables(path)
+    if "chat_session" in tables:
+        return _qoder_sessions_from_local_db(path)
+    if "ItemTable" in tables:
+        rows = _quest_sessions_from_vscdb(path)
+        for row in rows:
+            row.setdefault("cwd", "")
+            row.setdefault("project_name", "")
+            row.setdefault("session_type", "quest")
+            row.setdefault("mode", "")
+            row.setdefault("index_kind", "legacy-vscdb")
+        return rows
+    return []
+
+
+def _qoder_session_slots(source: str, configured_path: Path) -> list[dict[str, Any]]:
+    """Merge the new title index and legacy quest index without scanning arbitrary disks."""
+    paths = [configured_path, *default_candidates(source)]
+    seen_paths: set[str] = set()
+    by_id: dict[str, dict[str, Any]] = {}
+    for candidate in paths:
+        key = str(candidate).casefold()
+        if key in seen_paths or not candidate.is_file():
+            continue
+        seen_paths.add(key)
+        try:
+            rows = _qoder_sessions_from_path(candidate)
+        except (OSError, sqlite3.DatabaseError):
+            continue
+        for row in rows:
+            session_id = str(row.get("id") or "")
+            if not session_id:
+                continue
+            current = by_id.get(session_id)
+            if not current:
+                by_id[session_id] = dict(row)
+                continue
+            # SharedClientCache has the authoritative human title/project URI.
+            prefer = row.get("index_kind") == "shared-client-cache"
+            for field in ("title", "cwd", "project_name", "session_type", "mode", "index_kind"):
+                if row.get(field) and (prefer or not current.get(field)):
+                    current[field] = row[field]
+            stamps = [float(value or 0) for value in (current.get("created"), row.get("created")) if value]
+            if stamps:
+                current["created"] = min(stamps)
+            current["updated"] = max(float(current.get("updated") or 0), float(row.get("updated") or 0))
+    return sorted(by_id.values(), key=lambda item: float(item.get("updated") or 0), reverse=True)
+
+
+def _transcript_index(root: Path) -> dict[str, list[Path]]:
     """~/.qoder* 下的 projects/*/transcript/<sessionId>.jsonl 索引。"""
-    index: dict[str, Path] = {}
+    index: dict[str, list[Path]] = {}
     if not root.is_dir():
         return index
     for projects in (root / "projects", root / "cache" / "projects"):
         if not projects.is_dir():
             continue
         for transcript in projects.glob("*/transcript/*.jsonl"):
-            index.setdefault(transcript.stem, transcript)
+            index.setdefault(transcript.stem, []).append(transcript)
         # QoderCN 系：cache/projects/<hash>/conversation-history/<短id>/<短id>.jsonl
         for transcript in projects.glob("*/conversation-history/*/*.jsonl"):
-            index.setdefault(transcript.stem, transcript)
+            index.setdefault(transcript.stem, []).append(transcript)
     return index
 
 
@@ -1843,7 +1962,7 @@ def _read_quest_transcript(path: Path) -> tuple[list[dict[str, Any]], str]:
         if path.stat().st_size > MAX_CLAUDE_TRANSCRIPT_BYTES:
             return [], ""
         with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
+            for line_number, line in enumerate(handle, 1):
                 payload = json_value(line, None)
                 if not isinstance(payload, dict):
                     continue
@@ -1863,12 +1982,22 @@ def _read_quest_transcript(path: Path) -> tuple[list[dict[str, Any]], str]:
                     continue
                 # 去掉 harness 注入的包裹标签，保持正文干净
                 text = re.sub(r"(?s)<system-reminder>.*?</system-reminder>", "", text)
-                text = text.replace("<user_query>", "").replace("</user_query>", "").strip()
+                user_queries = re.findall(r"(?s)<user_query>\s*(.*?)\s*</user_query>", text)
+                if role == "user" and user_queries:
+                    text = user_queries[-1]
+                else:
+                    text = re.sub(r"(?s)<attached_files>.*?</attached_files>", "", text)
+                    text = text.replace("<user_query>", "").replace("</user_query>", "")
+                text = text.strip()
                 if not text:
                     continue
-                messages.append(
-                    {"role": role, "text": text, "timestamp": epoch(payload.get("timestamp"))}
-                )
+                messages.append({
+                    "role": role,
+                    "text": text,
+                    "timestamp": epoch(payload.get("timestamp")),
+                    "line": line_number,
+                    "event_id": str(payload.get("uuid") or ""),
+                })
     except OSError:
         return [], cwd
     return messages, cwd
@@ -1880,25 +2009,39 @@ def _load_qoder_family(
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
     index = _transcript_index(transcripts_root)
-    for slot in _quest_sessions_from_vscdb(path):
+    for slot in _qoder_session_slots(source, path):
         messages: list[dict[str, Any]] = []
         cwd = ""
-        transcript = index.get(slot["id"])
-        if not transcript:
-            # 短 id 目录（如 task-5da）：按 sessionId 前缀回退匹配
-            transcript = next(
-                (p for sid, p in index.items() if 6 <= len(sid) <= 24 and slot["id"].startswith(sid)),
-                None,
-            )
-        if transcript:
-            messages, cwd = _read_quest_transcript(transcript)
+        candidates: list[Path] = []
+        candidates.extend(index.get(slot["id"], []))
+        # 精简版常用 task-xxx 短 id；它可能比完整版覆盖更多后续文本。
+        candidates.extend(
+            p
+            for sid, paths in index.items()
+            if 6 <= len(sid) <= 24 and slot["id"].startswith(sid)
+            for p in paths
+            if p not in candidates
+        )
+        transcript = None
+        for candidate in candidates:
+            candidate_messages, candidate_cwd = _read_quest_transcript(candidate)
+            if len(candidate_messages) > len(messages):
+                transcript = candidate
+                messages = candidate_messages
+                cwd = candidate_cwd
+        cwd = cwd or str(slot.get("cwd") or "")
         if messages:
             messages_by_id[slot["id"]] = messages
+        source_kind = f"{source}-ide"
+        if not messages:
+            source_kind += "-metadata-only"
+        elif slot.get("index_kind") == "shared-client-cache":
+            source_kind += "-transcript"
         items.append(
             conversation(
                 source, slot["id"], slot["title"], messages,
                 cwd=cwd, created_at=slot["created"], updated_at=slot["updated"],
-                source_kind=f"{source}-ide",
+                source_kind=source_kind,
                 rollout_path=str(transcript or path),
             )
         )

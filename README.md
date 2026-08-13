@@ -11,6 +11,7 @@ If you work across several AI coding assistants, your conversations live in each
 
 - **Find**: boolean full-text search across all agents' conversations (AND/OR/NOT, phrases, parentheses; supports mixed CJK/Latin like `调试API`)
 - **Continue**: exact Codex and WorkBuddy session links, exact Claude Code resume commands, a safe ZCode workspace launcher, and a deterministic handoff packet that any agent can consume
+- **Review one conversation**: generate a local retrospective card with goals, completed work, decisions, remaining work, blockers, commits, files, and transcript-level evidence
 - **Review**: a fact-based daily recap — overview stats, project progress grouped by workspace, your own status markers (generated offline, no model calls) — so you close each day knowing what actually got done
 - **Organize**: check related conversations into named projects with status, notes, and task lists — so the work you did turns into something you can revisit
 
@@ -122,12 +123,14 @@ Open `http://127.0.0.1:8765` in your browser.
 Double-click `launcher.py` or run `python launcher.py` — starts the server and opens the browser.
 `修复数据源.cmd` is a Windows shortcut for repairing data source paths.
 
+The packaged EXE includes an in-process system tray tied to the actual listener port. It can open the Hub, toggle startup, or exit the whole app. The source fallback `start-tray.vbs` uses paths relative to its installation folder.
+
 ### Desktop launch (macOS)
 Double-click `start-macos.command`.
 
 ## Built-in data sources
 
-10 adapters shipped:
+13 adapters shipped:
 
 | Agent | Default discovery location |
 |---|---|
@@ -138,6 +141,8 @@ Double-click `start-macos.command`.
 | **Cursor** | `%APPDATA%/Cursor/User/globalStorage/` (requires a compatible `conversation-search.db`) |
 | **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db` (also matches renamed `QoderWork` / `QwenWorkCN` / `QwenWork` dirs; old + new data merged automatically) |
+| **Qoder / QoderCN** | `%APPDATA%/Qoder*/SharedClientCache/cache/db/local.db` title index + plaintext transcript under `~/.qoder*` (read-only; encrypted message tables are not read) |
+| **QwenWorkCN CLI** | `~/.qwenworkcn/` |
 | **ZCode** | `~/.zcode/cli/db/db.sqlite` |
 | **CodePilot** | Tries `~/.codepilot/`; a compatible DB can also be selected manually |
 | **Marvis** | Tries `~/.marvis/state.db`; a compatible DB can also be selected manually |
@@ -245,7 +250,7 @@ L2 summary-level (conversation overview, cheap) → L3 full-text (`budget` contr
 When you use several AI coding assistants (Codex CLI, Claude Code, Hermes, ZCode, etc.), each stores its conversation logs in a separate directory, with no shared place to search, review, or build on them. The Hub brings them into one local workspace: cross-agent search, daily work review, project memory, tags/favorites, and Markdown export — so the work you do across assistants doesn't stay scattered and forgotten.
 
 **Which AI coding assistants are supported?**
-10 built-in adapters: Codex, Claude Code, Hermes, WorkBuddy, Cursor, QClaw, ZCode, QoderWork, CodePilot, and Marvis. Other agents can be connected via JSONL / Markdown / SQLite custom sources.
+13 built-in adapters: Codex, Claude Code, Hermes, WorkBuddy, Cursor, QClaw, ZCode, QoderWork, Qoder, QoderCN, QwenWorkCN CLI, CodePilot, and Marvis. Other agents can be connected via JSONL / Markdown / SQLite custom sources.
 
 **How do I search all AI conversations on my machine?**
 After launching, type keywords in the search box. Supports AND / OR / NOT, `"exact phrases"`, parentheses, and mixed CJK/Latin; filter by agent, time range, status, and tags. Select conversations to batch-export Markdown / JSONL or add to a project.
@@ -264,7 +269,7 @@ Python 3.10+ (standard library only, no `pip install`), Windows / macOS; or just
 
 ```
 server.py           # Backend: HTTP server + indexing + search + daily review
-source_adapters.py  # Data source adapters (10 built-in + custom source framework)
+source_adapters.py  # Data source adapters (13 built-in + custom source framework)
 static/
   app.js            # Frontend logic
   index.html        # Page structure

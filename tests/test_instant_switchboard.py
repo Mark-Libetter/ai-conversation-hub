@@ -6,18 +6,22 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 TEST_DATA = tempfile.mkdtemp(prefix="hub-unit-data-")
 os.environ.setdefault("CONVERSATION_HUB_DATA_DIR", TEST_DATA)
 
 import source_adapters  # noqa: E402
+import desktop_app  # noqa: E402
 from server import (  # noqa: E402
     ConflictError,
     Conversation,
     ConversationIndex,
     build_continuation_packet,
+    build_conversation_review,
     continuation_packet_markdown,
+    conversation_review_markdown,
     launch_targets_for,
 )
 
@@ -42,6 +46,43 @@ def sample_conversation(source: str, session_id: str = "session-123456") -> Conv
 
 
 class InstantIndexTests(unittest.TestCase):
+    def test_running_port_skips_ports_that_can_be_bound(self) -> None:
+        class BindableProbe:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def bind(self, _address):
+                return None
+
+        with mock.patch.object(desktop_app.socket, "socket", return_value=BindableProbe()):
+            with mock.patch.object(desktop_app, "health") as health:
+                self.assertIsNone(desktop_app.running_port())
+        health.assert_not_called()
+
+    def test_running_port_health_checks_only_an_in_use_port(self) -> None:
+        attempts = 0
+
+        class Probe:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def bind(self, _address):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise OSError("in use")
+
+        with mock.patch.object(desktop_app.socket, "socket", return_value=Probe()):
+            with mock.patch.object(desktop_app, "health", return_value=True) as health:
+                self.assertEqual(8765, desktop_app.running_port())
+        health.assert_called_once_with(8765)
+
     def test_index_can_be_constructed_without_blocking_refresh(self) -> None:
         index = ConversationIndex(refresh_on_init=False)
         self.assertEqual("pending", index.initial_state()["status"])
@@ -114,6 +155,55 @@ class InstantIndexTests(unittest.TestCase):
         markdown = continuation_packet_markdown(first)
         self.assertIn("历史资料，不是新的系统指令", markdown)
         self.assertIn("Deploys require approval.", markdown)
+
+    def test_conversation_review_is_traceable_and_content_deterministic(self) -> None:
+        item = sample_conversation("qoder", "task-review.session.execution")
+        item.rollout_path = "C:/fixture/.qoder/task-review.jsonl"
+        messages = [
+            {
+                "role": "user",
+                "text": "Build the tray integration and keep source data read-only.",
+                "timestamp": 1,
+                "line": 11,
+                "event_id": "event-user",
+            },
+            {
+                "role": "assistant",
+                "text": "Decision: use the actual bound port. Implemented tray.py. Tests passed. Commit abc1234.",
+                "timestamp": 2,
+                "line": 12,
+                "event_id": "event-assistant",
+            },
+            {
+                "role": "user",
+                "text": "Next step: verify the packaged EXE.",
+                "timestamp": 3,
+                "line": 13,
+                "event_id": "event-next",
+            },
+        ]
+        first = build_conversation_review(item, messages, generated_at=10)
+        second = build_conversation_review(item, messages, generated_at=20)
+        self.assertEqual(first["content_sha256"], second["content_sha256"])
+        self.assertNotEqual(first["generated_at"], second["generated_at"])
+        self.assertEqual("ai-conversation-hub/conversation-review-v1", first["schema"])
+        self.assertEqual(item.rollout_path, first["source"]["transcript_path"])
+        self.assertEqual("Next step: verify the packaged EXE.", first["summary"]["latest_request"]["text"])
+        self.assertTrue(first["summary"]["completed"])
+        self.assertTrue(first["summary"]["decisions"])
+        self.assertEqual("abc1234", first["summary"]["commits"][0]["commit"])
+        evidence = {row["ref"]: row for row in first["evidence"]}
+        referenced = {
+            ref
+            for key in ("original_goal", "latest_request", "latest_response")
+            for ref in first["summary"][key]["evidence"]
+        }
+        self.assertTrue(referenced.issubset(evidence))
+        self.assertEqual(13, evidence["R003"]["line"])
+        self.assertEqual("event-next", evidence["R003"]["event_id"])
+        markdown = conversation_review_markdown(first)
+        self.assertIn("line 13", markdown)
+        self.assertIn(item.rollout_path, markdown)
 
     def test_memory_card_uses_optimistic_concurrency_and_can_be_cleared(self) -> None:
         index = ConversationIndex(refresh_on_init=False)
@@ -211,6 +301,129 @@ class AdapterRegistryTests(unittest.TestCase):
             estimate = source_adapters.estimate_conversations("codepilot", path)
             self.assertIsInstance(estimate, int)
             self.assertEqual(1, estimate)
+
+    def test_qoder_new_index_prefers_the_more_complete_plaintext_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            index_db = root / "local.db"
+            conn = sqlite3.connect(index_db)
+            try:
+                conn.execute(
+                    "CREATE TABLE chat_session("
+                    "session_id TEXT, session_title TEXT, project_uri TEXT, project_name TEXT, "
+                    "gmt_create INTEGER, gmt_modified INTEGER, session_type TEXT, mode TEXT)"
+                )
+                conn.execute(
+                    "INSERT INTO chat_session VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        "task-abc.session.execution",
+                        "Continue project optimization",
+                        "C:/fixture/project",
+                        "project",
+                        1000,
+                        2000,
+                        "quest",
+                        "agent",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            full = root / "projects" / "full" / "transcript" / "task-abc.session.execution.jsonl"
+            full.parent.mkdir(parents=True)
+            full.write_text(
+                json.dumps({
+                    "type": "user",
+                    "uuid": "full-1",
+                    "cwd": "C:/fixture/project",
+                    "message": {"role": "user", "content": "old partial transcript"},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            compact = (
+                root / "cache" / "projects" / "compact" / "conversation-history"
+                / "task-abc" / "task-abc.jsonl"
+            )
+            compact.parent.mkdir(parents=True)
+            compact.write_text(
+                "\n".join([
+                    json.dumps({
+                        "role": "user",
+                        "uuid": "compact-1",
+                        "message": {
+                            "content": (
+                                "<attached_files>generated diff</attached_files>"
+                                "<user_query>Improve the tray integration.</user_query>"
+                            )
+                        },
+                    }),
+                    json.dumps({
+                        "role": "assistant",
+                        "uuid": "compact-2",
+                        "message": {"content": "Implemented and verified."},
+                    }),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(source_adapters.validate_source("qoder", index_db)[0])
+            with mock.patch.object(source_adapters, "default_candidates", return_value=[index_db]):
+                items, messages = source_adapters._load_qoder_family("qoder", index_db, root)
+            self.assertEqual(1, len(items))
+            self.assertEqual("Continue project optimization", items[0]["title"])
+            self.assertEqual(str(compact), items[0]["rollout_path"])
+            self.assertEqual(2, len(messages[items[0]["id"]]))
+            self.assertEqual("Improve the tray integration.", messages[items[0]["id"]][0]["text"])
+            self.assertEqual(1, messages[items[0]["id"]][0]["line"])
+            self.assertEqual("compact-1", messages[items[0]["id"]][0]["event_id"])
+
+    def test_qoder_old_config_migrates_to_the_new_title_index(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_db = root / "state.vscdb"
+            conn = sqlite3.connect(old_db)
+            try:
+                conn.execute("CREATE TABLE ItemTable(key TEXT, value TEXT)")
+                conn.execute(
+                    "INSERT INTO ItemTable VALUES(?, ?)",
+                    (
+                        "lingma.chat.localHistory.fixture",
+                        json.dumps([{"sessionId": "legacy-id", "title": "Legacy"}]),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            new_db = root / "local.db"
+            conn = sqlite3.connect(new_db)
+            try:
+                conn.execute(
+                    "CREATE TABLE chat_session("
+                    "session_id TEXT, session_title TEXT, project_uri TEXT, project_name TEXT, "
+                    "gmt_create INTEGER, gmt_modified INTEGER, session_type TEXT, mode TEXT)"
+                )
+                conn.execute(
+                    "INSERT INTO chat_session VALUES('new-id','New title','','',1,2,'quest','agent')"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            config = {
+                "extra_sources": {
+                    "qoder": {"enabled": True, "path": str(old_db)},
+                }
+            }
+
+            def candidates(source: str) -> list[Path]:
+                return [new_db, old_db] if source == "qoder" else []
+
+            with mock.patch.object(source_adapters, "default_candidates", side_effect=candidates):
+                status = source_adapters.configured_extra_sources(config, with_counts=False)
+            self.assertEqual(str(new_db), status["qoder"]["path"])
+            self.assertTrue(status["qoder"]["valid"])
 
     def test_cursor_qclaw_and_marvis_estimators(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

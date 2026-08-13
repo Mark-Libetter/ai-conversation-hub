@@ -866,14 +866,28 @@ mark { background: #e9dfad; color: var(--ink); }
   line-height: 1.45;
 }
 .launch-note.exact { color: var(--codex); }
-.continuation-block {
+.continuation-block,
+.review-block {
   padding-top: 20px;
   border-top: 1px solid var(--line);
 }
-.continuation-block .section-heading { gap: 12px; align-items: flex-start; }
-.continuation-block .section-heading h3 { margin: 0 0 5px; font-size: 11px; letter-spacing: .05em; }
-.continuation-block .section-heading p { margin: 0; font-size: 9px; line-height: 1.5; }
-.continuation-state { max-width: 118px; font-size: 8px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+
+.review-preview {
+  margin-top: 12px;
+}
+
+.review-output {
+  width: 100%;
+  resize: vertical;
+}
+.continuation-block .section-heading,
+.review-block .section-heading { gap: 12px; align-items: flex-start; }
+.continuation-block .section-heading h3,
+.review-block .section-heading h3 { margin: 0 0 5px; font-size: 11px; letter-spacing: .05em; }
+.continuation-block .section-heading p,
+.review-block .section-heading p { margin: 0; font-size: 9px; line-height: 1.5; }
+.continuation-state,
+.review-state { max-width: 118px; font-size: 8px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
 .continuation-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
 .continuation-preview { margin-top: 12px; }
 .continuation-output {

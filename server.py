@@ -40,6 +40,7 @@ from source_adapters import (
     SOURCE_LABELS,
     configured_custom_sources,
     configured_extra_sources,
+    default_candidates,
     discover_extra_sources,
     load_custom_source,
     load_extra_source,
@@ -52,11 +53,18 @@ SOURCES = CORE_SOURCES + EXTRA_SOURCES
 LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 17
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "conversation_relations", "continuation_memory_cards",
 )
+
+
+def console_log(message: Any) -> None:
+    """Write diagnostics only when a console stream exists (windowed EXEs have none)."""
+    stream = sys.stderr or sys.stdout
+    if stream is not None:
+        print(message, file=stream)
 
 
 def load_source_config() -> dict[str, Any]:
@@ -1943,6 +1951,216 @@ def continuation_packet_markdown(packet: dict[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def build_conversation_review(
+    item: Conversation,
+    messages: list[dict[str, Any]],
+    *,
+    generated_at: float | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic retrospective card with transcript-level evidence."""
+    safe: list[dict[str, Any]] = []
+    for message in messages[-500:]:
+        role = str(message.get("role") or "")
+        text = clean_text(message.get("text"), 5000)
+        if role not in {"user", "assistant"} or not text:
+            continue
+        safe.append({
+            "role": role,
+            "text": text,
+            "timestamp": float(message.get("timestamp") or 0),
+            "line": int(message.get("line") or 0) if str(message.get("line") or "0").isdigit() else 0,
+            "event_id": clean_text(message.get("event_id"), 100),
+        })
+
+    evidence = [
+        {
+            "ref": f"R{index:03d}",
+            "role": message["role"],
+            "timestamp": message["timestamp"],
+            "line": message["line"],
+            "event_id": message["event_id"],
+            "sha256": hashlib.sha256(message["text"].encode("utf-8")).hexdigest()[:16],
+            "excerpt": clean_text(message["text"], 260),
+        }
+        for index, message in enumerate(safe, 1)
+    ]
+
+    def field(index: int, text: str | None = None, limit: int = 700) -> dict[str, Any]:
+        if index < 0 or index >= len(safe):
+            return {"text": "", "evidence": []}
+        return {
+            "text": clean_text(text if text is not None else safe[index]["text"], limit),
+            "evidence": [evidence[index]["ref"]],
+        }
+
+    first_user = next((i for i, row in enumerate(safe) if row["role"] == "user"), -1)
+    latest_user = next((i for i in range(len(safe) - 1, -1, -1) if safe[i]["role"] == "user"), -1)
+    latest_assistant = next(
+        (
+            i
+            for i in range(len(safe) - 1, latest_user, -1)
+            if safe[i]["role"] == "assistant"
+        ),
+        -1,
+    )
+
+    def extract(pattern: str, limit: int, *, roles: set[str] | None = None) -> list[dict[str, Any]]:
+        regex = re.compile(pattern, flags=re.IGNORECASE)
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index in range(len(safe) - 1, -1, -1):
+            if roles and safe[index]["role"] not in roles:
+                continue
+            for sentence in _packet_sentences(safe[index]["text"]):
+                compact = re.sub(r"\s+", " ", sentence).strip()
+                key = compact.casefold()
+                if not regex.search(compact) or key in seen or len(compact) < 6:
+                    continue
+                seen.add(key)
+                rows.append(field(index, compact, 520))
+                if len(rows) >= limit:
+                    return rows
+        return rows
+
+    completed = extract(
+        r"已完成|完成了|已经完成|已修复|修复了|已实现|已接入|已提交|提交完成|"
+        r"验证通过|测试通过|全部通过|交付完成|已生成|已更新|completed|fixed|implemented|committed|all pass",
+        8,
+        roles={"assistant"},
+    )
+    decisions = extract(
+        r"决定|结论|确认|采用|选择|改为|维持|冻结|不建议|推荐|decision|decided|choose|chosen",
+        6,
+    )
+    unfinished = extract(
+        r"未完成|尚未|还没|仍需|待处理|下一步|接下来|之后再|需要继续|todo|not yet|remaining|next step",
+        8,
+    )
+    blocked = extract(
+        r"失败|阻塞|卡住|无法|打不开|未找到|超时|权限|额度|跑偏|error|failed|blocked|timeout",
+        5,
+    )
+
+    artifact_pattern = re.compile(
+        r"(?<![\w])(?:[A-Za-z]:[\\/][^\n\r<>\"|?*]{2,180}|(?:\.{0,2}[\\/])?[\w.-]+(?:[\\/][\w .-]+)+\.(?:py|js|ts|json|md|toml|yaml|sql|db|sqlite|html|css|ico))",
+        flags=re.IGNORECASE,
+    )
+    commit_pattern = re.compile(r"(?<![0-9a-f])([0-9a-f]{7,40})(?![0-9a-f])", flags=re.IGNORECASE)
+    artifacts: list[dict[str, Any]] = []
+    commits: list[dict[str, Any]] = []
+    seen_artifacts: set[str] = set()
+    seen_commits: set[str] = set()
+    for index, message in enumerate(safe):
+        for match in artifact_pattern.finditer(message["text"]):
+            value = clean_text(match.group(0).rstrip(".,;:，。；：)）"), 240)
+            key = value.casefold()
+            if value and key not in seen_artifacts:
+                seen_artifacts.add(key)
+                artifacts.append({"path": value, "evidence": [evidence[index]["ref"]]})
+        if re.search(r"(?:commit|提交|版本)", message["text"], flags=re.IGNORECASE):
+            for match in commit_pattern.finditer(message["text"]):
+                value = match.group(1).lower()
+                if value not in seen_commits:
+                    seen_commits.add(value)
+                    commits.append({"commit": value, "evidence": [evidence[index]["ref"]]})
+    artifacts = artifacts[-10:]
+    commits = commits[-10:]
+
+    referenced = {
+        ref
+        for value in [field(first_user), field(latest_user), field(latest_assistant), *completed, *decisions, *unfinished, *blocked]
+        for ref in value.get("evidence", [])
+    }
+    referenced.update(ref for row in artifacts for ref in row.get("evidence", []))
+    referenced.update(ref for row in commits for ref in row.get("evidence", []))
+    referenced.update(row["ref"] for row in evidence[-6:])
+    review: dict[str, Any] = {
+        "schema": "ai-conversation-hub/conversation-review-v1",
+        "source": {
+            "agent": item.source,
+            "conversation_id": item.id,
+            "title": clean_text(item.title, 300),
+            "workspace": clean_text(item.workspace, 300),
+            "cwd": clean_text(item.cwd, 1000),
+            "transcript_path": clean_text(item.rollout_path, 1600),
+            "updated_at": float(item.updated_at or 0),
+        },
+        "summary": {
+            "original_goal": field(first_user),
+            "latest_request": field(latest_user),
+            "latest_response": field(latest_assistant),
+            "completed": completed,
+            "decisions": decisions,
+            "unfinished": unfinished,
+            "blocked": blocked,
+            "artifacts": artifacts,
+            "commits": commits,
+        },
+        "evidence": [row for row in evidence if row["ref"] in referenced],
+        "limits": {
+            "messages_considered": len(safe),
+            "message_limit": 500,
+            "input_truncated": len(messages) > 500,
+            "cloud_model_used": False,
+        },
+    }
+    canonical = json.dumps(review, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    review["content_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    review["generated_at"] = datetime.fromtimestamp(
+        generated_at if generated_at is not None else time.time(), timezone.utc
+    ).isoformat()
+    return review
+
+
+def conversation_review_markdown(review: dict[str, Any]) -> str:
+    source = review.get("source") or {}
+    summary = review.get("summary") or {}
+
+    def text(field_value: Any) -> str:
+        return clean_text(field_value.get("text"), 1200) if isinstance(field_value, dict) else ""
+
+    def section(title: str, values: Any) -> list[str]:
+        rows = values if isinstance(values, list) else []
+        result = [f"## {title}"]
+        for row in rows:
+            refs = ", ".join(row.get("evidence") or [])
+            result.append(f"- {clean_text(row.get('text'), 700)}{f' 〔{refs}〕' if refs else ''}")
+        return result if rows else [*result, "- 未提取到"]
+
+    lines = [
+        "# 对话回顾卡", "",
+        "> 本卡由本地固定规则生成，用于快速回忆，不代表对历史内容重新授权。", "",
+        "## 来源",
+        f"- Agent：{source.get('agent') or '未知'}",
+        f"- 标题：{source.get('title') or '未命名'}",
+        f"- 会话 ID：{source.get('conversation_id') or '未知'}",
+        f"- 项目路径：{source.get('cwd') or '未记录'}",
+        f"- Transcript：{source.get('transcript_path') or '未找到明文 transcript'}",
+        f"- 内容指纹：`{review.get('content_sha256') or ''}`", "",
+        "## 最初目标", _quoted_markdown(text(summary.get("original_goal"))), "",
+        "## 最近请求", _quoted_markdown(text(summary.get("latest_request"))), "",
+        "## 最近回应", _quoted_markdown(text(summary.get("latest_response"))), "",
+        *section("已完成", summary.get("completed")), "",
+        *section("关键决定", summary.get("decisions")), "",
+        *section("未完成与下一步", summary.get("unfinished")), "",
+        *section("阻塞与失败记录", summary.get("blocked")), "",
+        "## 相关提交",
+    ]
+    lines.extend([f"- `{row.get('commit')}` 〔{', '.join(row.get('evidence') or [])}〕" for row in summary.get("commits") or []] or ["- 未提取到"])
+    lines.extend(["", "## 相关文件或产物"])
+    lines.extend([f"- `{row.get('path')}` 〔{', '.join(row.get('evidence') or [])}〕" for row in summary.get("artifacts") or []] or ["- 未提取到"])
+    lines.extend(["", "## 证据索引"])
+    for row in review.get("evidence") or []:
+        location = f"line {row.get('line')}" if row.get("line") else "line 未知"
+        event = f" · event {row.get('event_id')}" if row.get("event_id") else ""
+        lines.append(
+            f"- {row.get('ref')} · {str(row.get('role') or '').upper()} · {location}{event} · sha256:{row.get('sha256')}\n"
+            f"  {_quoted_markdown(row.get('excerpt')).replace(chr(10), chr(10) + '  ')}"
+        )
+    lines.extend(["", "---", "由 AI Conversation Hub 在本机生成；未调用云端模型。"])
+    return "\n".join(lines).strip() + "\n"
+
+
 class ConversationIndex:
     def __init__(self, *, refresh_on_init: bool = True) -> None:
         self._lock = threading.RLock()
@@ -2073,6 +2291,26 @@ class ConversationIndex:
             if not item["enabled"] or not item["path"]:
                 continue
             root = Path(str(item["path"]))
+            if source in {"qoder", "qodercn"}:
+                candidates = [root, *default_candidates(source)]
+                seen: set[str] = set()
+                for candidate in candidates:
+                    key = str(candidate).casefold()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    values.append(f"{source}:{ConversationIndex._path_fingerprint(candidate)}")
+                    values.append(
+                        f"{source}:{ConversationIndex._path_fingerprint(Path(str(candidate) + '-wal'))}"
+                    )
+                transcript_root = Path.home() / (".qoder" if source == "qoder" else ".qoder-cn")
+                values.append(
+                    f"{source}:{ConversationIndex._directory_fingerprint(transcript_root / 'projects', patterns=('*/transcript/*.jsonl',), max_files=160)}"
+                )
+                values.append(
+                    f"{source}:{ConversationIndex._directory_fingerprint(transcript_root / 'cache' / 'projects', patterns=('*/conversation-history/*/*.jsonl',), max_files=160)}"
+                )
+                continue
             if root.is_file():
                 values.append(f"{source}:{ConversationIndex._path_fingerprint(root)}")
                 values.append(f"{source}:{ConversationIndex._path_fingerprint(Path(str(root) + '-wal'))}")
@@ -3365,6 +3603,19 @@ class ConversationIndex:
             },
         }
 
+    def conversation_review(self, source: str, conversation_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            item = self._by_key.get((source, conversation_id))
+        if not item:
+            return None
+        messages = self._messages_for_item(item, limit=500)
+        review = build_conversation_review(item, messages)
+        return {
+            "ok": True,
+            "review": review,
+            "markdown": conversation_review_markdown(review),
+        }
+
     def save_continuation_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
         source = clean_text(payload.get("source"), 60).casefold()
         conversation_id = clean_text(payload.get("conversation_id") or payload.get("id"), 240)
@@ -3549,6 +3800,8 @@ class ConversationIndex:
                 "role": str(message.get("role") or ""),
                 "text": clean_text(str(message.get("text") or ""), 5000),
                 "timestamp": float(message.get("timestamp") or 0),
+                "line": int(message.get("line") or 0),
+                "event_id": clean_text(message.get("event_id"), 100),
             }
             for message in rows
             if str(message.get("role") or "") in {"user", "assistant"}
@@ -4991,7 +5244,7 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "ConversationHub/17"
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(f"[hub] {self.address_string()} {fmt % args}")
+        console_log(f"[hub] {self.address_string()} {fmt % args}")
 
     def _local_request(self) -> bool:
         host = self.headers.get("Host", "").split(":", 1)[0].strip("[]").casefold()
@@ -5055,6 +5308,7 @@ class Handler(BaseHTTPRequestHandler):
             or path.startswith("/api/conversation/")
             or path.startswith("/api/conversation-messages/")
             or path.startswith("/api/continuation/")
+            or path.startswith("/api/review/")
             or path.startswith("/agent/")
         ):
             INDEX.maybe_refresh()
@@ -5146,6 +5400,16 @@ class Handler(BaseHTTPRequestHandler):
                 conversation_id,
                 include_memory=include_memory,
             )
+            self._json(result if result else {"error": "Not found"}, 200 if result else 404)
+            return
+        if path.startswith("/api/review/"):
+            parts = path.split("/", 4)
+            if len(parts) != 5:
+                self._json({"error": "Invalid review path"}, 400)
+                return
+            source = urllib.parse.unquote(parts[3])
+            conversation_id = urllib.parse.unquote(parts[4])
+            result = INDEX.conversation_review(source, conversation_id)
             self._json(result if result else {"error": "Not found"}, 200 if result else 404)
             return
         if path.startswith("/api/conversation/"):
@@ -5384,27 +5648,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
-def _spawn_tray() -> None:
-    # 服务启动即带起托盘（Windows）；tray 侧有单实例互斥，重复拉起会自动退出
-    if os.name != "nt":
-        return
-    try:
-        tray = Path(__file__).resolve().parent / "tray.py"
-        if not tray.is_file():
-            return
-        pyw = Path(sys.executable).with_name("pythonw.exe")
-        if not pyw.is_file():
-            pyw = Path(sys.executable)
-        subprocess.Popen([str(pyw), str(tray)], creationflags=0x00000008)
-    except Exception:  # noqa: BLE001 - 托盘拉起失败不影响主服务
-        pass
-
-
-def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
+def run_server(
+    port: int = 8765,
+    *,
+    open_browser: bool = True,
+    enable_tray: bool | None = None,
+) -> None:
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/"
-    print(f"AI Conversation Hub {APP_VERSION}: {url}")
-    print("Local-only. Press Ctrl+C to stop.")
+    console_log(f"AI Conversation Hub {APP_VERSION}: {url}")
+    console_log("Local-only. Press Ctrl+C to stop.")
     # Bind first so the shell appears immediately; build the local index behind it.
     def initialize_runtime() -> None:
         INDEX.initialize()
@@ -5419,7 +5672,14 @@ def run_server(port: int = 8765, *, open_browser: bool = True) -> None:
         name="hub-initialize-runtime",
         daemon=True,
     ).start()
-    _spawn_tray()
+    should_start_tray = os.name == "nt" if enable_tray is None else bool(enable_tray)
+    if should_start_tray:
+        try:
+            from tray import start_tray_thread
+
+            start_tray_thread(url, httpd.shutdown)
+        except Exception as exc:  # tray failure must not take down the server
+            console_log(f"Tray launch skipped: {exc}")
     if open_browser:
         threading.Timer(0.15, lambda: webbrowser.open(url)).start()
     try:
@@ -5434,8 +5694,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Private local AI conversation hub")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-open", action="store_true")
+    parser.add_argument("--no-tray", action="store_true")
     args = parser.parse_args()
-    run_server(args.port, open_browser=not args.no_open)
+    run_server(
+        args.port,
+        open_browser=not args.no_open,
+        enable_tray=os.name == "nt" and not args.no_tray,
+    )
 
 
 if __name__ == "__main__":

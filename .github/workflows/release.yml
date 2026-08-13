@@ -38,14 +38,14 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --add-data "static${{ matrix.sep }}static" desktop_app.py
           else
-            pyinstaller --noconfirm --onedir --name AIConversationHub --add-data "static${{ matrix.sep }}static" desktop_app.py
+            pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --icon packaging/app_icon.ico --add-data "static${{ matrix.sep }}static" --add-data "packaging/app_icon.ico${{ matrix.sep }}packaging" --hidden-import tray desktop_app.py
           fi
         shell: bash
 
       - name: Bundle launcher and user guide (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: cp "packaging/启动.bat" "packaging/使用说明.txt" dist/AIConversationHub/
+        run: cp "packaging/启动.bat" "packaging/使用说明.txt" "start-tray.vbs" dist/AIConversationHub/
 
       - name: Bundle launcher and user guide (macOS)
         if: runner.os == 'macOS'

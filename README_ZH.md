@@ -11,6 +11,7 @@
 
 - **找对话**：在所有 agent 的对话里做布尔全文检索（AND/OR/NOT/短语/括号，支持中英文连写如「调试API」）
 - **继续工作**：Codex、WorkBuddy 可精确回到原会话；Claude Code 可复制精确恢复命令；ZCode 安全打开原工作区；所有来源都能生成可追溯的跨 Agent 接续包
+- **回顾单条对话**：在详情页生成本地回顾卡，提取目标、完成项、决定、未完成、阻塞、提交与文件，并保留 transcript 行号、事件 ID 和内容哈希
 - **每日回顾**：事实化的当天回顾——概览统计、按工作区分组的项目进展、你自己的状态标记（离线生成，不调模型）——让你每天结束时清楚今天到底完成了什么
 - **整理项目**：把相关对话勾选归入自命名项目，集中管理状态、笔记与任务清单——让做过的事变成可以回看的东西
 
@@ -123,12 +124,14 @@ python3 server.py       # macOS / Linux
 双击 `launcher.py` 或运行 `python launcher.py`，会自动启动服务并打开浏览器。
 `修复数据源.cmd` 是 Windows 下的数据源修复快捷入口。
 
+正式 EXE 内置系统托盘并使用实际监听端口；托盘可打开中心、切换开机启动，或退出整个中心。源码兼容入口 `start-tray.vbs` 使用相对安装路径，不再绑定某台电脑的绝对路径。
+
 ### 桌面启动（macOS）
 双击 `start-macos.command` 即可。
 
 ## 内置数据源
 
-内置 10 个适配器：
+内置 13 个适配器：
 
 | Agent | 默认发现位置 |
 |---|---|
@@ -139,6 +142,8 @@ python3 server.py       # macOS / Linux
 | **Cursor** | `%APPDATA%/Cursor/User/globalStorage/`（需要兼容的 `conversation-search.db`） |
 | **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db`（兼容改名后的 `QoderWork` / `QwenWorkCN` / `QwenWork` 目录，新旧数据自动合并） |
+| **Qoder / QoderCN** | `%APPDATA%/Qoder*/SharedClientCache/cache/db/local.db` 标题索引 + `~/.qoder*` 明文 transcript（只读；不读取加密消息表） |
+| **千问办公 CLI** | `~/.qwenworkcn/` |
 | **ZCode** | `~/.zcode/cli/db/db.sqlite` |
 | **CodePilot** | 自动尝试 `~/.codepilot/`；也可手动选择包含 `chat_sessions` / `messages` 的数据库 |
 | **Marvis** | 自动尝试 `~/.marvis/state.db`；也可手动选择会话数据库 |
@@ -251,7 +256,7 @@ agent 90% 的查询在前两层就能解决。纯 Python 标准库实现，零�
 让你在各家助手里做过的事，不再散落、不再被遗忘。
 
 **支持哪些 AI 编程助手？**
-内置 10 个适配器：Codex、Claude Code、Hermes、WorkBuddy、Cursor、QClaw、ZCode、QoderWork、CodePilot、Marvis；
+内置 13 个适配器：Codex、Claude Code、Hermes、WorkBuddy、Cursor、QClaw、ZCode、QoderWork、Qoder、QoderCN、千问办公 CLI、CodePilot、Marvis；
 其它 agent（包括 ChatGPT / Gemini 等导出的聊天记录）可通过 JSONL / Markdown /
 SQLite 自定义数据源接入，无需改代码。
 
@@ -281,7 +286,7 @@ Python 3.10+（仅标准库，无需 pip install），Windows / macOS；也可�
 
 ```
 server.py           # 后端：HTTP 服务 + 索引 + 搜索 + 每日回顾
-source_adapters.py  # 数据源适配器（内置 10 个 + 自定义源框架）
+source_adapters.py  # 数据源适配器（内置 13 个 + 自定义源框架）
 static/
   app.js            # 前端逻辑
   index.html        # 页面结构

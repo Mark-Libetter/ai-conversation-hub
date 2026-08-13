@@ -1709,6 +1709,43 @@ function renderDetail(data) {
     launchNote.classList.toggle("exact", !!target.exact);
   }
 
+  const generateReview = fragment.querySelector(".generate-review");
+  const reviewState = fragment.querySelector(".review-state");
+  const reviewPreview = fragment.querySelector(".review-preview");
+  const reviewOutput = fragment.querySelector(".review-output");
+  const copyReview = fragment.querySelector(".copy-review");
+  const downloadReview = fragment.querySelector(".download-review");
+  let reviewResult = null;
+  generateReview.addEventListener("click", async () => {
+    generateReview.disabled = true;
+    reviewState.textContent = "生成中…";
+    try {
+      reviewResult = await api(
+        `/api/review/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}`
+      );
+      reviewOutput.value = reviewResult.markdown || "";
+      reviewPreview.hidden = false;
+      copyReview.hidden = false;
+      downloadReview.hidden = false;
+      const fingerprint = reviewResult.review?.content_sha256?.slice(0, 10) || "";
+      reviewState.textContent = `已生成 · ${fingerprint}`;
+    } catch (error) {
+      reviewState.textContent = error.message;
+    } finally {
+      generateReview.disabled = false;
+    }
+  });
+  copyReview.addEventListener("click", async () => {
+    if (!reviewResult) return;
+    await navigator.clipboard.writeText(reviewResult.markdown || "");
+    showToast("回顾卡 Markdown 已复制");
+  });
+  downloadReview.addEventListener("click", () => {
+    if (!reviewResult) return;
+    const filename = `${item.source}-${item.id}-review.json`.replace(/[<>:"/\\|?*]/g, "_");
+    downloadText(filename, JSON.stringify(reviewResult.review, null, 2), "application/json;charset=utf-8");
+  });
+
   const memoryInput = fragment.querySelector(".memory-card-input");
   const includeMemory = fragment.querySelector(".include-memory");
   const memoryState = fragment.querySelector(".memory-save-state");

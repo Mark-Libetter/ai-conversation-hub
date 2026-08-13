@@ -30,7 +30,7 @@ def main() -> int:
     env = dict(os.environ)
     env["CONVERSATION_HUB_DATA_DIR"] = data_dir
     proc = subprocess.Popen(
-        [sys.executable, "server.py", "--no-open", "--port", str(PORT)],
+        [sys.executable, "server.py", "--no-open", "--no-tray", "--port", str(PORT)],
         cwd=REPO,
         env=env,
         stdout=subprocess.DEVNULL,
