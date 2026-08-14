@@ -37,6 +37,18 @@
     "marvis": {
       "enabled": false,
       "path": ""
+    },
+    "qoder": {
+      "enabled": false,
+      "path": ""
+    },
+    "qodercn": {
+      "enabled": false,
+      "path": ""
+    },
+    "qwenworkcn": {
+      "enabled": false,
+      "path": ""
     }
   },
   "custom_sources": []

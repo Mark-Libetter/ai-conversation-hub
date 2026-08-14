@@ -70,7 +70,7 @@ python3 server.py       # macOS / Linux
 - macOS：双击 `start-macos.command`
 - 命令行：`python server.py`，然后浏览器打开 `http://127.0.0.1:8765`
 
-> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。
+> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / 千问办公 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。源码仓库与用户数据分离：Windows 下源码检出复用 `%LOCALAPPDATA%\AIConversationHub` 里的笔记和 `sources.json`。Qoder 恢复实现只在 `skills/find-agent-data/agent_recovery/`。
 
 **第 2 步：确认数据源**（如果左侧栏没显示对话）
 1. 点击左侧栏底部「设置」⚙

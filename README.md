@@ -70,7 +70,9 @@ Open `http://127.0.0.1:8765` in your browser.
 - macOS: double-click `start-macos.command`
 - Command line: `python server.py`, then open `http://127.0.0.1:8765`
 
-> 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
+> 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / QwenWorkCN can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
+
+Development happens in this source tree. On Windows, a source checkout reuses `%LOCALAPPDATA%\AIConversationHub` for `sources.json` and notes so user data stays out of git. Qoder recovery is implemented once in `skills/find-agent-data/agent_recovery/`.
 
 **Step 2: Confirm data sources** (if the sidebar shows no conversations)
 1. Click **Settings** ⚙ at the bottom of the sidebar

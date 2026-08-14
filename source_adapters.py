@@ -10,6 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+_SKILL_ROOT = Path(__file__).resolve().parent / "skills" / "find-agent-data"
+if _SKILL_ROOT.is_dir() and str(_SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SKILL_ROOT))
+
 
 EXTRA_SOURCES = (
     "claude",
@@ -245,16 +249,9 @@ def default_candidates(source: str) -> list[Path]:
                 reverse=True,
             ))
         return candidates
-    if source == "qoder":
-        return [
-            application_support / "Qoder" / "SharedClientCache" / "cache" / "db" / "local.db",
-            application_support / "Qoder" / "User" / "globalStorage" / "state.vscdb",
-        ]
-    if source == "qodercn":
-        return [
-            application_support / "QoderCN" / "SharedClientCache" / "cache" / "db" / "local.db",
-            application_support / "QoderCN" / "User" / "globalStorage" / "state.vscdb",
-        ]
+    if source in {"qoder", "qodercn"}:
+        from agent_recovery.qoder import layout
+        return list(layout(source).index_dbs)
     if source == "qwenworkcn":
         return [home / ".qwenworkcn"]
     return []
@@ -497,7 +494,9 @@ def estimate_conversations(source: str, path: Path | None) -> int:
                     ).fetchone()[0]
                 )
         if source in {"qoder", "qodercn"}:
-            return len(_qoder_session_slots(source, path))
+            from agent_recovery.qoder import collect_index_sessions
+            sessions, _warnings = collect_index_sessions(source, configured_index=path)
+            return len(sessions)
         if source == "qwenworkcn":
             return len(_claude_transcript_files(path))
     except (OSError, sqlite3.DatabaseError, ValueError, TypeError):
@@ -1819,241 +1818,63 @@ def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
 
 
 
-def _quest_sessions_from_vscdb(path: Path) -> list[dict[str, Any]]:
-    """Qoder 系 IDE 的 state.vscdb：解析 lingma.chat.localHistory.*.quest，按 sessionId 聚合。"""
-    sessions: dict[str, dict[str, Any]] = {}
-    with readonly_db(path) as conn:
-        rows = conn.execute(
-            "SELECT value FROM ItemTable WHERE key LIKE 'lingma.chat.localHistory.%'"
-        ).fetchall()
-    for row in rows:
-        entries = json_value(row["value"], [])
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            session_id = str(entry.get("sessionId") or entry.get("id") or "").strip()
-            if not session_id:
-                continue
-            stamp = epoch(entry.get("timestamp"))
-            title = redact(entry.get("title"), 240)
-            slot = sessions.setdefault(
-                session_id, {"id": session_id, "title": "", "created": 0.0, "updated": 0.0}
-            )
-            if title and not slot["title"]:
-                slot["title"] = title
-            if stamp and (not slot["created"] or stamp < slot["created"]):
-                slot["created"] = stamp
-            if stamp > slot["updated"]:
-                slot["updated"] = stamp
-    return sorted(sessions.values(), key=lambda item: item["updated"], reverse=True)
-
-
-def _qoder_sessions_from_local_db(path: Path) -> list[dict[str, Any]]:
-    """Read Qoder's unencrypted session index; message bodies remain untouched/encrypted."""
-    sessions: list[dict[str, Any]] = []
-    with readonly_db(path) as conn:
-        columns = {
-            str(row["name"])
-            for row in conn.execute("PRAGMA table_info(chat_session)")
-        }
-        if "session_id" not in columns:
-            return []
-        fields = (
-            "session_id", "session_title", "project_uri", "project_name",
-            "gmt_create", "gmt_modified", "session_type", "mode",
-        )
-        selected = ",".join(
-            field if field in columns else f"NULL AS {field}"
-            for field in fields
-        )
-        rows = conn.execute(
-            f"SELECT {selected} FROM chat_session ORDER BY gmt_modified DESC"
-        ).fetchall()
-    for row in rows:
-        session_id = str(row["session_id"] or "").strip()
-        if not session_id:
-            continue
-        sessions.append({
-            "id": session_id,
-            "title": redact(row["session_title"], 240),
-            "cwd": str(row["project_uri"] or ""),
-            "project_name": redact(row["project_name"], 120),
-            "created": epoch(row["gmt_create"]),
-            "updated": epoch(row["gmt_modified"]),
-            "session_type": redact(row["session_type"], 64),
-            "mode": redact(row["mode"], 64),
-            "index_kind": "shared-client-cache",
-        })
-    return sessions
-
-
-def _qoder_sessions_from_path(path: Path) -> list[dict[str, Any]]:
-    tables = sqlite_tables(path)
-    if "chat_session" in tables:
-        return _qoder_sessions_from_local_db(path)
-    if "ItemTable" in tables:
-        rows = _quest_sessions_from_vscdb(path)
-        for row in rows:
-            row.setdefault("cwd", "")
-            row.setdefault("project_name", "")
-            row.setdefault("session_type", "quest")
-            row.setdefault("mode", "")
-            row.setdefault("index_kind", "legacy-vscdb")
-        return rows
-    return []
-
-
-def _qoder_session_slots(source: str, configured_path: Path) -> list[dict[str, Any]]:
-    """Merge the new title index and legacy quest index without scanning arbitrary disks."""
-    paths = [configured_path, *default_candidates(source)]
-    seen_paths: set[str] = set()
-    by_id: dict[str, dict[str, Any]] = {}
-    for candidate in paths:
-        key = str(candidate).casefold()
-        if key in seen_paths or not candidate.is_file():
-            continue
-        seen_paths.add(key)
-        try:
-            rows = _qoder_sessions_from_path(candidate)
-        except (OSError, sqlite3.DatabaseError):
-            continue
-        for row in rows:
-            session_id = str(row.get("id") or "")
-            if not session_id:
-                continue
-            current = by_id.get(session_id)
-            if not current:
-                by_id[session_id] = dict(row)
-                continue
-            # SharedClientCache has the authoritative human title/project URI.
-            prefer = row.get("index_kind") == "shared-client-cache"
-            for field in ("title", "cwd", "project_name", "session_type", "mode", "index_kind"):
-                if row.get(field) and (prefer or not current.get(field)):
-                    current[field] = row[field]
-            stamps = [float(value or 0) for value in (current.get("created"), row.get("created")) if value]
-            if stamps:
-                current["created"] = min(stamps)
-            current["updated"] = max(float(current.get("updated") or 0), float(row.get("updated") or 0))
-    return sorted(by_id.values(), key=lambda item: float(item.get("updated") or 0), reverse=True)
-
-
-def _transcript_index(root: Path) -> dict[str, list[Path]]:
-    """~/.qoder* 下的 projects/*/transcript/<sessionId>.jsonl 索引。"""
-    index: dict[str, list[Path]] = {}
-    if not root.is_dir():
-        return index
-    for projects in (root / "projects", root / "cache" / "projects"):
-        if not projects.is_dir():
-            continue
-        for transcript in projects.glob("*/transcript/*.jsonl"):
-            index.setdefault(transcript.stem, []).append(transcript)
-        # QoderCN 系：cache/projects/<hash>/conversation-history/<短id>/<短id>.jsonl
-        for transcript in projects.glob("*/conversation-history/*/*.jsonl"):
-            index.setdefault(transcript.stem, []).append(transcript)
-    return index
-
-
-def _read_quest_transcript(path: Path) -> tuple[list[dict[str, Any]], str]:
-    messages: list[dict[str, Any]] = []
-    cwd = ""
-    try:
-        if path.stat().st_size > MAX_CLAUDE_TRANSCRIPT_BYTES:
-            return [], ""
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line_number, line in enumerate(handle, 1):
-                payload = json_value(line, None)
-                if not isinstance(payload, dict):
-                    continue
-                if not cwd and payload.get("cwd"):
-                    cwd = str(payload["cwd"])
-                message = payload.get("message")
-                if not isinstance(message, dict):
-                    continue
-                # 精简版 transcript 的 role 在顶层；完整版在 message 内
-                role = str(
-                    message.get("role") or payload.get("role") or payload.get("type") or ""
-                ).casefold()
-                if role not in {"user", "assistant"}:
-                    continue
-                text = content_text(message.get("content"))
-                if not text:
-                    continue
-                # 去掉 harness 注入的包裹标签，保持正文干净
-                text = re.sub(r"(?s)<system-reminder>.*?</system-reminder>", "", text)
-                user_queries = re.findall(r"(?s)<user_query>\s*(.*?)\s*</user_query>", text)
-                if role == "user" and user_queries:
-                    text = user_queries[-1]
-                else:
-                    text = re.sub(r"(?s)<attached_files>.*?</attached_files>", "", text)
-                    text = text.replace("<user_query>", "").replace("</user_query>", "")
-                text = text.strip()
-                if not text:
-                    continue
-                messages.append({
-                    "role": role,
-                    "text": text,
-                    "timestamp": epoch(payload.get("timestamp")),
-                    "line": line_number,
-                    "event_id": str(payload.get("uuid") or ""),
-                })
-    except OSError:
-        return [], cwd
-    return messages, cwd
-
-
 def _load_qoder_family(
-    source: str, path: Path, transcripts_root: Path
+    source: str, path: Path, transcripts_root: Path | None = None
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    from agent_recovery.qoder import recover_all
+
+    isolated = transcripts_root is not None
+    recovered, _warnings = recover_all(
+        source,
+        configured_index=path,
+        compact_root=transcripts_root if isolated else None,
+        full_root=transcripts_root if isolated else None,
+        include_messages=True,
+        include_preview=False,
+        use_default_indexes=not isolated,
+    )
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
-    index = _transcript_index(transcripts_root)
-    for slot in _qoder_session_slots(source, path):
-        messages: list[dict[str, Any]] = []
-        cwd = ""
-        candidates: list[Path] = []
-        candidates.extend(index.get(slot["id"], []))
-        # 精简版常用 task-xxx 短 id；它可能比完整版覆盖更多后续文本。
-        candidates.extend(
-            p
-            for sid, paths in index.items()
-            if 6 <= len(sid) <= 24 and slot["id"].startswith(sid)
-            for p in paths
-            if p not in candidates
-        )
-        transcript = None
-        for candidate in candidates:
-            candidate_messages, candidate_cwd = _read_quest_transcript(candidate)
-            if len(candidate_messages) > len(messages):
-                transcript = candidate
-                messages = candidate_messages
-                cwd = candidate_cwd
-        cwd = cwd or str(slot.get("cwd") or "")
+    for session in recovered:
+        messages = [
+            {
+                "role": message["role"],
+                "text": message["text"],
+                "timestamp": message.get("timestamp") or 0,
+                "line": (message.get("evidence") or {}).get("line"),
+                "event_id": str((message.get("evidence") or {}).get("event_id") or ""),
+            }
+            for message in session.messages
+        ]
         if messages:
-            messages_by_id[slot["id"]] = messages
+            messages_by_id[session.session_id] = messages
         source_kind = f"{source}-ide"
-        if not messages:
+        if session.source_kind == "metadata_only":
             source_kind += "-metadata-only"
-        elif slot.get("index_kind") == "shared-client-cache":
+        elif session.index_kind == "shared-client-cache":
             source_kind += "-transcript"
         items.append(
             conversation(
-                source, slot["id"], slot["title"], messages,
-                cwd=cwd, created_at=slot["created"], updated_at=slot["updated"],
+                source,
+                session.session_id,
+                session.title,
+                messages,
+                cwd=session.cwd,
+                created_at=session.created,
+                updated_at=session.updated,
                 source_kind=source_kind,
-                rollout_path=str(transcript or path),
+                rollout_path=str(session.selected_path or path),
             )
         )
     return items, messages_by_id
 
 
 def _load_qoder(path: Path):
-    return _load_qoder_family("qoder", path, Path.home() / ".qoder")
+    return _load_qoder_family("qoder", path)
 
 
 def _load_qodercn(path: Path):
-    return _load_qoder_family("qodercn", path, Path.home() / ".qoder-cn")
+    return _load_qoder_family("qodercn", path)
 
 
 def _load_qwenworkcn(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:

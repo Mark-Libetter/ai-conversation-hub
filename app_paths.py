@@ -26,8 +26,15 @@ def data_dir() -> Path:
             local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
             target = local_app_data / APP_NAME / "UserData"
     else:
-        # Keep the existing source/stable-copy workflow backward compatible.
-        target = resource_dir()
+        local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        live_root = local_app_data / APP_NAME
+        if sys.platform == "darwin":
+            target = Path.home() / "Library" / "Application Support" / APP_NAME / "UserData"
+        elif (live_root / "hub_notes.sqlite").is_file() or resource_dir() == live_root:
+            # Clean source checkouts reuse the existing AppData notes/config.
+            target = live_root
+        else:
+            target = live_root / "UserData"
     target.mkdir(parents=True, exist_ok=True)
     return target.resolve()
 
