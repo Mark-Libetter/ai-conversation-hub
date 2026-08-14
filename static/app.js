@@ -1709,8 +1709,17 @@ function renderDetail(data) {
     item.native_project ? `原生项目：${item.native_project}` : item.workspace,
   ].filter(Boolean).join(" · ");
   fragment.querySelector(".detail-title").textContent = item.title;
-  fragment.querySelector(".detail-meta").textContent =
-    `${dateTime(item.updated_at)} · ${item.id}${item.model ? ` · ${item.model}` : ""}`;
+  const statusLabels = {
+    todo: "待继续",
+    done: "已完成",
+    reference: "重要参考",
+    archive_candidate: "可归档",
+  };
+  fragment.querySelector(".detail-meta").textContent = [
+    dateTime(item.updated_at),
+    item.model,
+    statusLabels[item.user_status] || "",
+  ].filter(Boolean).join(" · ");
   const favoriteButton = fragment.querySelector(".favorite-button");
   favoriteButton.textContent = item.favorite ? "★" : "☆";
   favoriteButton.classList.toggle("active", item.favorite);
@@ -1900,7 +1909,7 @@ function renderDetail(data) {
     ["最新回应", data.overview.latest_response || "未提取到"],
   ];
   fragment.querySelector(".overview").innerHTML = overviewRows.map(([term, text]) => {
-    const clipped = clampText(text, 180);
+    const clipped = clampText(text, 140);
     if (!clipped.rest) return `<div><dt>${term}</dt><dd>${escapeHtml(clipped.short)}</dd></div>`;
     return `<div><dt>${term}</dt><dd><details class="overview-clamp"><summary>${escapeHtml(clipped.short)}</summary><div class="overview-full">${escapeHtml(clipped.rest)}</div></details></dd></div>`;
   }).join("");
@@ -2173,7 +2182,18 @@ function renderDetail(data) {
     });
   }
   // 状态切换也自动保存
-  fragment.querySelector(".user-status")?.addEventListener("change", () => saveDetail(detailRoot, item, true, true));
+  fragment.querySelector(".user-status")?.addEventListener("change", () => {
+    item.user_status = status.value;
+    const meta = detailRoot.querySelector(".detail-meta");
+    if (meta) {
+      meta.textContent = [
+        dateTime(item.updated_at),
+        item.model,
+        statusLabels[item.user_status] || "",
+      ].filter(Boolean).join(" · ");
+    }
+    saveDetail(detailRoot, item, true, true);
+  });
 
   detailPane.replaceChildren(fragment);
 }
