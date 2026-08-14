@@ -545,8 +545,12 @@ def configured_extra_sources(
         if not path:
             path = next((item for item in default_candidates(source) if validate_source(source, item)[0]), None)
         valid, detail = validate_source(source, path) if path else (False, "未发现")
+        if source not in raw:
+            enabled = valid and source == "grok"
+        else:
+            enabled = bool(value.get("enabled", False))
         result[source] = {
-            "enabled": bool(value.get("enabled", False)),
+            "enabled": enabled,
             "path": str(path or ""),
             "valid": valid,
             "detected": bool(path),
