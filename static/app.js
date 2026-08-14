@@ -490,6 +490,30 @@ const USER_QUERY_RE = /<user_query>([\s\S]*?)<\/user_query>/gi;
 const LONG_FENCE_RE = /```[^\n]*\n([\s\S]*?)```/g;
 const PROCESS_PARA_RE = /^(?:the user\b|i(?:'m|'ll| am| will| need| should| can| think| see| have| want to)\b|let me\b|looking at\b|this (?:is|looks|seems)\b|we (?:need|should|can)\b|okay[,.]|alright[,.]|based on\b|from the (?:code|file|output|diff)\b|i'll\b|the count is\b|wait[,.]|hmm[,.]|我(?:需要|先|来|会|将|觉得|看)|让我|接下来我|首先(?:，|,)|根据.{0,16}(?:代码|文件|输出|结果))/i;
 
+function isInternalNoiseMessage(message) {
+  const text = String(message?.text || "").trim();
+  const role = String(message?.role || "");
+  const low = text.toLocaleLowerCase();
+  if (!text) return true;
+  if (role === "user") {
+    return (
+      text.startsWith("[System:")
+      || text.startsWith("[CONTEXT COMPACTION")
+      || text.startsWith("<system-reminder")
+      || low.includes("your previous response was truncated")
+    );
+  }
+  if (role !== "assistant") return false;
+  if (text.length < 280 && (
+    text.startsWith("内存满了")
+    || text.includes("批量精简")
+    || low.includes("memory consolidation failed")
+    || low.includes("stop retrying memory calls")
+    || low.includes("memory would be at")
+  )) return true;
+  return text.length < 140 && (text.includes("匹配到了两条") || text.includes("也有歧义") || text.includes("唯一匹配的压缩替换"));
+}
+
 function foldProcessEnabled() {
   return localStorage.getItem(FOLD_PROCESS_KEY) !== "0";
 }
@@ -1958,6 +1982,7 @@ function renderDetail(data) {
   const renderMessages = () => {
     const needle = messageQuery.trim().toLocaleLowerCase();
     const filtered = conversationMessages.filter((message) => {
+      if (isInternalNoiseMessage(message)) return false;
       const roleMatch = messageRole === "all" || message.role === messageRole;
       const queryMatch = !needle || message.text.toLocaleLowerCase().includes(needle);
       return roleMatch && queryMatch;

@@ -22,6 +22,7 @@ from server import (  # noqa: E402
     build_conversation_review,
     continuation_packet_markdown,
     conversation_review_markdown,
+    is_internal_noise_message,
     launch_targets_for,
 )
 
@@ -43,6 +44,15 @@ def sample_conversation(source: str, session_id: str = "session-123456") -> Conv
         status="today",
         source_kind=f"{source}-fixture",
     )
+
+
+class InternalNoiseTests(unittest.TestCase):
+    def test_hides_hermes_bookkeeping_and_keeps_real_turns(self) -> None:
+        self.assertTrue(is_internal_noise_message("assistant", "内存满了，批量精简+更新一起做："))
+        self.assertTrue(is_internal_noise_message("user", "[System: The active model for this chat has changed to glm-5.3]", "model_switch"))
+        self.assertTrue(is_internal_noise_message("user", "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below."))
+        self.assertFalse(is_internal_noise_message("assistant", "开始批量修改。先处理 models.py 的 4 处修改："))
+        self.assertFalse(is_internal_noise_message("user", "我想说怎么最方便打开grok过去的对话呢"))
 
 
 class InstantIndexTests(unittest.TestCase):

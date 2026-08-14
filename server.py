@@ -1217,6 +1217,43 @@ def local_day(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, LOCAL_TZ).date().isoformat()
 
 
+HERMES_INTERNAL_DISPLAY_KINDS = {"model_switch", "auto_continue", "hidden"}
+INTERNAL_USER_PREFIXES = (
+    "[System:",
+    "[CONTEXT COMPACTION",
+    "<system-reminder",
+    "System: The active model",
+)
+INTERNAL_ASSISTANT_MARKERS = (
+    "内存满了",
+    "批量精简",
+    "memory consolidation failed",
+    "stop retrying memory calls",
+    "memory would be at",
+    "over the limit. remove or shorten",
+)
+
+
+def is_internal_noise_message(role: str, text: str, display_kind: str = "") -> bool:
+    """Hide harness bookkeeping that is not a real user/assistant turn."""
+    kind = str(display_kind or "").casefold()
+    if kind in HERMES_INTERNAL_DISPLAY_KINDS:
+        return True
+    stripped = str(text or "").strip()
+    if not stripped:
+        return True
+    lowered = stripped.casefold()
+    if str(role or "") == "user":
+        return stripped.startswith(INTERNAL_USER_PREFIXES) or "your previous response was truncated" in lowered
+    if str(role or "") != "assistant":
+        return False
+    if any(marker in lowered or marker in stripped for marker in INTERNAL_ASSISTANT_MARKERS) and len(stripped) < 280:
+        return True
+    if len(stripped) < 140 and any(token in stripped for token in ("匹配到了两条", "也有歧义", "唯一匹配的压缩替换")):
+        return True
+    return False
+
+
 def sanitize_daily_text(value: Any, role: str, limit: int = 12000) -> str:
     text = str(value or "").replace("\x00", "").strip()
     if not text:
@@ -1230,6 +1267,8 @@ def sanitize_daily_text(value: Any, role: str, limit: int = 12000) -> str:
         text,
         flags=re.DOTALL | re.IGNORECASE,
     ).strip()
+    if is_internal_noise_message(role, text):
+        return ""
     if role == "user" and (
         text.startswith("<environment_context")
         or text.startswith("<recommended_plugins")
@@ -3704,18 +3743,23 @@ class ConversationIndex:
             values.append(end)
         suffix = f" LIMIT {int(limit)}" if limit else ""
         with readonly_db(HERMES_DB) as conn:
+            columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(messages)")}
+            extra = ", display_kind" if "display_kind" in columns else ", '' AS display_kind"
             rows = conn.execute(
                 f"""
-                SELECT role, content, timestamp FROM messages
+                SELECT role, content, timestamp{extra} FROM messages
                 WHERE {' AND '.join(clauses)}
                 ORDER BY timestamp DESC, id DESC{suffix}
                 """,
                 values,
             ).fetchall()[::-1]
-        return [
-            {"role": row["role"], "text": clean_text(row["content"], 5000), "timestamp": float(row["timestamp"])}
-            for row in rows
-        ]
+        messages = []
+        for row in rows:
+            text = clean_text(row["content"], 5000)
+            if is_internal_noise_message(str(row["role"] or ""), text, str(row["display_kind"] or "")):
+                continue
+            messages.append({"role": row["role"], "text": text, "timestamp": float(row["timestamp"])})
+        return messages
 
     def _codex_messages(
         self,
