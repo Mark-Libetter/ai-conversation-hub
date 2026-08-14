@@ -51,8 +51,9 @@ const SOURCE_LABELS = {
   qoder: "Qoder",
   qodercn: "QoderCN",
   qwenworkcn: "千问办公",
+  grok: "Grok Build",
 };
-const EXTRA_SOURCES = ["claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis", "qoder", "qodercn", "qwenworkcn"];
+const EXTRA_SOURCES = ["claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis", "qoder", "qodercn", "qwenworkcn", "grok"];
 const VALID_SOURCES = new Set(["all", ...Object.keys(SOURCE_LABELS)]);
 const VALID_RANGES = new Set(["all", "today", "3d", "7d", "30d"]);
 const VALID_STATUSES = new Set(["all", "todo", "done", "reference", "archive_candidate"]);

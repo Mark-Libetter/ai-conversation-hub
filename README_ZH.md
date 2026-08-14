@@ -70,7 +70,7 @@ python3 server.py       # macOS / Linux
 - macOS：双击 `start-macos.command`
 - 命令行：`python server.py`，然后浏览器打开 `http://127.0.0.1:8765`
 
-> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / 千问办公 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。源码仓库与用户数据分离：Windows 下源码检出复用 `%LOCALAPPDATA%\AIConversationHub` 里的笔记和 `sources.json`。Qoder 恢复实现只在 `skills/find-agent-data/agent_recovery/`。
+> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Grok Build / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / 千问办公 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。源码仓库与用户数据分离：Windows 下源码检出复用 `%LOCALAPPDATA%\AIConversationHub` 里的笔记和 `sources.json`。Qoder 恢复实现只在 `skills/find-agent-data/agent_recovery/`。
 
 **第 2 步：确认数据源**（如果左侧栏没显示对话）
 1. 点击左侧栏底部「设置」⚙
@@ -131,7 +131,7 @@ python3 server.py       # macOS / Linux
 
 ## 内置数据源
 
-内置 13 个适配器：
+内置 14 个适配器：
 
 | Agent | 默认发现位置 |
 |---|---|
@@ -139,6 +139,7 @@ python3 server.py       # macOS / Linux
 | **Codex** | `~/.codex/state_5.sqlite` + rollout JSONL（尊重 `CODEX_HOME`） |
 | **WorkBuddy** | `~/.workbuddy/`（尊重 `WORKBUDDY_HOME`） |
 | **Claude Code** | `~/.claude/` |
+| **Grok Build** | `~/.grok/sessions/`（尊重 `GROK_HOME`；只读 `summary.json` + `updates.jsonl`） |
 | **Cursor** | `%APPDATA%/Cursor/User/globalStorage/`（需要兼容的 `conversation-search.db`） |
 | **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db`（兼容改名后的 `QoderWork` / `QwenWorkCN` / `QwenWork` 目录，新旧数据自动合并） |
@@ -155,6 +156,7 @@ python3 server.py       # macOS / Linux
 | **Codex** | `codex://threads/<id>` | ✅ | 已按本机 Codex 桌面协议验证 |
 | **WorkBuddy** | `workbuddy://chat/<id>` | ✅ | 使用已验证的 WorkBuddy 任务深链格式 |
 | **Claude Code** | 复制 `claude --resume <id>` | ✅ | 只复制、不自动执行命令 |
+| **Grok Build** | 复制 `grok --resume <id>` | ✅ | 只复制、不自动执行命令 |
 | **ZCode** | 启动 `ZCode.exe --open-workspace <cwd>` | 工作区级 | 绕过冲突的 `zcode://` 注册；不宣称能精确到会话 |
 | **Hermes / Cursor / QClaw / Marvis** | 打开客户端 | — | 未发现可验证的会话级协议，因此不宣称精确定位 |
 | **QoderWork / CodePilot / 自定义源** | 接续包 / 复制 ID / 导出 | — | 保留安全回退，不猜测私有协议 |
@@ -256,7 +258,7 @@ agent 90% 的查询在前两层就能解决。纯 Python 标准库实现，零�
 让你在各家助手里做过的事，不再散落、不再被遗忘。
 
 **支持哪些 AI 编程助手？**
-内置 13 个适配器：Codex、Claude Code、Hermes、WorkBuddy、Cursor、QClaw、ZCode、QoderWork、Qoder、QoderCN、千问办公 CLI、CodePilot、Marvis；
+内置 14 个适配器：Codex、Claude Code、Hermes、WorkBuddy、Grok Build、Cursor、QClaw、ZCode、QoderWork、Qoder、QoderCN、千问办公 CLI、CodePilot、Marvis；
 其它 agent（包括 ChatGPT / Gemini 等导出的聊天记录）可通过 JSONL / Markdown /
 SQLite 自定义数据源接入，无需改代码。
 

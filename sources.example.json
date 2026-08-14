@@ -49,6 +49,10 @@
     "qwenworkcn": {
       "enabled": false,
       "path": ""
+    },
+    "grok": {
+      "enabled": true,
+      "path": ""
     }
   },
   "custom_sources": []

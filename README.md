@@ -70,7 +70,7 @@ Open `http://127.0.0.1:8765` in your browser.
 - macOS: double-click `start-macos.command`
 - Command line: `python server.py`, then open `http://127.0.0.1:8765`
 
-> 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / QwenWorkCN can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
+> 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Grok Build / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / QwenWorkCN can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
 
 Development happens in this source tree. On Windows, a source checkout reuses `%LOCALAPPDATA%\AIConversationHub` for `sources.json` and notes so user data stays out of git. Qoder recovery is implemented once in `skills/find-agent-data/agent_recovery/`.
 
@@ -132,7 +132,7 @@ Double-click `start-macos.command`.
 
 ## Built-in data sources
 
-13 adapters shipped:
+14 adapters shipped:
 
 | Agent | Default discovery location |
 |---|---|
@@ -140,6 +140,7 @@ Double-click `start-macos.command`.
 | **Codex** | `~/.codex/state_5.sqlite` + rollout JSONL (respects `CODEX_HOME`) |
 | **WorkBuddy** | `~/.workbuddy/` (respects `WORKBUDDY_HOME`) |
 | **Claude Code** | `~/.claude/` |
+| **Grok Build** | `~/.grok/sessions/` (respects `GROK_HOME`; reads `summary.json` + `updates.jsonl` only) |
 | **Cursor** | `%APPDATA%/Cursor/User/globalStorage/` (requires a compatible `conversation-search.db`) |
 | **QClaw** | `~/.qclaw/` |
 | **QoderWork** | `%APPDATA%/QoderWork CN/data/agents.db` (also matches renamed `QoderWork` / `QwenWorkCN` / `QwenWork` dirs; old + new data merged automatically) |
@@ -156,6 +157,7 @@ Double-click `start-macos.command`.
 | **Codex** | `codex://threads/<id>` | Yes | Verified against the installed Codex desktop protocol |
 | **WorkBuddy** | `workbuddy://chat/<id>` | Yes | Uses WorkBuddy's validated task deep-link grammar |
 | **Claude Code** | Copy `claude --resume <id>` | Yes | Copied only; the Hub never executes the command |
+| **Grok Build** | Copy `grok --resume <id>` | Yes | Copied only; the Hub never executes the command |
 | **ZCode** | Launch `ZCode.exe --open-workspace <cwd>` | Workspace | Bypasses a conflicting `zcode://` registration; no session-level protocol is claimed |
 | **Hermes / Cursor / QClaw / Marvis** | Open app | No | No verifiable session-level protocol is claimed |
 | **QoderWork / CodePilot / custom** | Handoff packet / copy ID / export | No | Safe fallback; no guessed private protocol |

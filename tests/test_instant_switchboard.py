@@ -114,6 +114,11 @@ class InstantIndexTests(unittest.TestCase):
         self.assertEqual("zcode-workspace", zcode["target_id"])
         self.assertNotIn("href", zcode)
 
+        grok = launch_targets_for(sample_conversation("grok"))[0]
+        self.assertTrue(grok["exact"])
+        self.assertEqual("copy_command", grok["kind"])
+        self.assertEqual("grok --resume session-123456", grok["value"])
+
     def test_unsafe_session_id_never_becomes_a_command(self) -> None:
         item = sample_conversation("claude", "bad id; remove-item")
         self.assertEqual([], launch_targets_for(item))
@@ -251,7 +256,7 @@ class AdapterRegistryTests(unittest.TestCase):
     def test_all_bundled_loaders_are_registered(self) -> None:
         expected = {
             "claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis",
-            "qoder", "qodercn", "qwenworkcn",
+            "qoder", "qodercn", "qwenworkcn", "grok",
         }
         self.assertEqual(expected, set(source_adapters.EXTRA_SOURCES))
         self.assertEqual(expected, set(source_adapters.LOADERS))
@@ -377,6 +382,113 @@ class AdapterRegistryTests(unittest.TestCase):
             self.assertEqual("Improve the tray integration.", messages[items[0]["id"]][0]["text"])
             self.assertEqual(1, messages[items[0]["id"]][0]["line"])
             self.assertEqual("compact-1", messages[items[0]["id"]][0]["event_id"])
+
+    def test_grok_reads_updates_and_skips_thoughts_and_subagents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main = root / "sessions" / "workspace" / "sess-main"
+            child = root / "sessions" / "workspace" / "sess-main" / "subagents" / "child"
+            main.mkdir(parents=True)
+            child.mkdir(parents=True)
+            (main / "summary.json").write_text(
+                json.dumps({
+                    "info": {"id": "sess-main", "cwd": "C:/work/demo"},
+                    "generated_title": "Grok fixture",
+                    "created_at": "2026-08-14T00:00:00Z",
+                    "updated_at": "2026-08-14T00:01:00Z",
+                    "current_model_id": "grok-4.6",
+                }),
+                encoding="utf-8",
+            )
+            (main / "updates.jsonl").write_text(
+                "\n".join([
+                    json.dumps({
+                        "timestamp": 100,
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "user_message_chunk",
+                                "content": {"type": "text", "text": "Hello "},
+                                "_meta": {"eventId": "u1"},
+                            }
+                        },
+                    }),
+                    json.dumps({
+                        "timestamp": 101,
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "user_message_chunk",
+                                "content": {"type": "text", "text": "Grok"},
+                            }
+                        },
+                    }),
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "agent_thought_chunk",
+                                "content": {"type": "text", "text": "hidden thought"},
+                            }
+                        }
+                    }),
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "tool_call",
+                                "title": "read file",
+                            }
+                        }
+                    }),
+                    json.dumps({
+                        "timestamp": 102,
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {"type": "text", "text": "Hi there"},
+                                "_meta": {"eventId": "a1"},
+                            }
+                        },
+                    }),
+                    json.dumps({
+                        "params": {"update": {"sessionUpdate": "turn_completed"}}
+                    }),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            (child / "summary.json").write_text(
+                json.dumps({
+                    "info": {"id": "child", "cwd": "C:/work/demo"},
+                    "generated_title": "hidden child",
+                    "parent_session_id": "sess-main",
+                }),
+                encoding="utf-8",
+            )
+            (child / "updates.jsonl").write_text(
+                json.dumps({
+                    "params": {
+                        "update": {
+                            "sessionUpdate": "user_message_chunk",
+                            "content": {"type": "text", "text": "child work"},
+                        }
+                    }
+                }) + "\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(source_adapters.validate_source("grok", root)[0])
+            self.assertEqual(1, source_adapters.estimate_conversations("grok", root))
+            items, messages = source_adapters._load_grok(root)
+            self.assertEqual(1, len(items))
+            self.assertEqual("sess-main", items[0]["id"])
+            self.assertEqual("Grok fixture", items[0]["title"])
+            self.assertEqual("C:/work/demo", items[0]["cwd"])
+            self.assertEqual("grok-4.6", items[0]["model"])
+            self.assertEqual(
+                [
+                    {"role": "user", "text": "Hello Grok"},
+                    {"role": "assistant", "text": "Hi there"},
+                ],
+                [{"role": row["role"], "text": row["text"]} for row in messages["sess-main"]],
+            )
+            self.assertNotIn("hidden thought", json.dumps(messages))
 
     def test_qoder_old_config_migrates_to_the_new_title_index(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

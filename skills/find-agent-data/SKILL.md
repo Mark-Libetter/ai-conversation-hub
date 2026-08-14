@@ -1,6 +1,6 @@
 ---
 name: find-agent-data
-description: Locate, inspect, map, and safely recover local conversation/data files for Codex, Claude Code, Hermes, WorkBuddy, Qoder, QoderCN, QoderWork/QwenWork, ZCode, OpenCode, Gemini CLI, Trae, QClaw, Marvis, CodeBuddy, LobsterAI, AutoClaw, DuMate, and related local AI assistants. Use when the user asks where an agent stores chats, wants a local conversation found by title/session/project, needs an evidence-backed transcript recovery or migration inventory, or asks whether an agent's history is locally recoverable. Prefer known path rules over full-disk search and keep all inspection read-only.
+description: Locate, inspect, map, and safely recover local conversation/data files for Codex, Claude Code, Hermes, WorkBuddy, Grok Build, Qoder, QoderCN, QoderWork/QwenWork, ZCode, OpenCode, Gemini CLI, Trae, QClaw, Marvis, CodeBuddy, LobsterAI, AutoClaw, DuMate, and related local AI assistants. Use when the user asks where an agent stores chats, wants a local conversation found by title/session/project, needs an evidence-backed transcript recovery or migration inventory, or asks whether an agent's history is locally recoverable. Prefer known path rules over full-disk search and keep all inspection read-only.
 ---
 
 # Find Agent Data

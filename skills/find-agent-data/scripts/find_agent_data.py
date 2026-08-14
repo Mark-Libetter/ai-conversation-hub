@@ -40,6 +40,7 @@ WORKBUDDY_HOME = Path(os.environ.get("WORKBUDDY_HOME") or HOME / ".workbuddy")
 OPENCODE_HOME = Path(os.environ.get("OPENCODE_DATA_DIR") or HOME / ".local" / "share" / "opencode")
 HERMES_HOME = Path(os.environ.get("HERMES_HOME") or HOME / ".hermes")
 HERMES_DB = Path(os.environ.get("CONVERSATION_HUB_HERMES_DB") or HERMES_HOME / "state.db")
+GROK_HOME = Path(os.environ.get("GROK_HOME") or HOME / ".grok")
 
 
 # Confidence is about the storage rule, not whether the product is installed.
@@ -173,6 +174,18 @@ AGENTS: dict[str, dict[str, Any]] = {
         "confidence": "partial",
         "locations": [location("workspace_root", HOME / ".openclaw-autoclaw" / "workspace", "json")],
     },
+    "grok": {
+        "label": "Grok Build",
+        "confidence": "verified",
+        "locations": [
+            location("transcript_root", GROK_HOME / "sessions", "jsonl"),
+            location("session_index", GROK_HOME / "sessions" / "session_search.sqlite", "sqlite", evidence=False),
+            location("runtime_root", GROK_HOME, "mixed", evidence=False),
+        ],
+        "warnings": [
+            "Prefer summary.json + updates.jsonl. Never read auth.json. session_search.sqlite is a derived search index, not the transcript source of truth.",
+        ],
+    },
     "dumate": {
         "label": "DuMate",
         "confidence": "verified",
@@ -194,6 +207,8 @@ ALIASES = {
     "qoder-cn": "qodercn",
     "qoder-work": "qoderwork",
     "qwen-work-cn": "qwenworkcn",
+    "grok-build": "grok",
+    "grok-cli": "grok",
 }
 
 

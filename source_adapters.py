@@ -26,6 +26,7 @@ EXTRA_SOURCES = (
     "qoder",
     "qodercn",
     "qwenworkcn",
+    "grok",
 )
 MAX_CLAUDE_TRANSCRIPT_BYTES = 100 * 1024 * 1024
 CUSTOM_SOURCE_PREFIX = "custom_"
@@ -41,6 +42,7 @@ SOURCE_LABELS = {
     "qoder": "Qoder",
     "qodercn": "QoderCN",
     "qwenworkcn": "千问办公",
+    "grok": "Grok Build",
 }
 # QoderWork 产品改名谱系（Qoder -> QoderWork -> 千问办公/QwenWork），
 # 同一台机器可能同时存在新旧两代数据目录，需要合并读取以免丢对话
@@ -254,6 +256,8 @@ def default_candidates(source: str) -> list[Path]:
         return list(layout(source).index_dbs)
     if source == "qwenworkcn":
         return [home / ".qwenworkcn"]
+    if source == "grok":
+        return [Path(os.environ.get("GROK_HOME") or (home / ".grok"))]
     return []
 
 
@@ -422,6 +426,11 @@ def validate_source(source: str, path: Path) -> tuple[bool, str]:
             if files:
                 return True, f"千问办公 CLI · {len(files)} 个会话文件"
             return False, "未找到 projects 下的会话 JSONL"
+        if source == "grok":
+            summaries = _grok_summary_files(path) if path.is_dir() else []
+            if summaries:
+                return True, f"Grok Build · {len(summaries)} 个会话"
+            return False, "未找到 ~/.grok/sessions 下的 summary.json"
     except (OSError, sqlite3.DatabaseError):
         return False, "读取失败"
     return False, "未知来源"
@@ -499,6 +508,8 @@ def estimate_conversations(source: str, path: Path | None) -> int:
             return len(sessions)
         if source == "qwenworkcn":
             return len(_claude_transcript_files(path))
+        if source == "grok":
+            return len(_grok_summary_files(path))
     except (OSError, sqlite3.DatabaseError, ValueError, TypeError):
         return 0
     return 0
@@ -1877,6 +1888,142 @@ def _load_qodercn(path: Path):
     return _load_qoder_family("qodercn", path)
 
 
+def _grok_sessions_root(path: Path) -> Path:
+    sessions = path / "sessions"
+    return sessions if sessions.is_dir() else path
+
+
+def _grok_summary_files(path: Path) -> list[Path]:
+    root = _grok_sessions_root(path)
+    if not root.is_dir():
+        return []
+    result: list[Path] = []
+    for summary in root.rglob("summary.json"):
+        if any(part.casefold() == "subagents" for part in summary.parts):
+            continue
+        result.append(summary)
+    return result
+
+
+def _parse_grok_updates(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        if path.stat().st_size > MAX_CLAUDE_TRANSCRIPT_BYTES:
+            return []
+    except OSError:
+        return []
+
+    messages: list[dict[str, Any]] = []
+    current_role = ""
+    current_parts: list[str] = []
+    current_ts = 0.0
+    current_line = 0
+    current_event = ""
+
+    def flush() -> None:
+        nonlocal current_role, current_parts, current_ts, current_line, current_event
+        text = redact("".join(current_parts)).strip()
+        if current_role and text:
+            messages.append(
+                {
+                    "role": current_role,
+                    "text": text,
+                    "timestamp": current_ts,
+                    "line": current_line,
+                    "event_id": current_event,
+                }
+            )
+        current_role = ""
+        current_parts = []
+        current_ts = 0.0
+        current_line = 0
+        current_event = ""
+
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
+            for line_number, raw in enumerate(handle, start=1):
+                payload = json_value(raw, None)
+                if not isinstance(payload, dict):
+                    continue
+                params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+                update = params.get("update") if isinstance(params.get("update"), dict) else {}
+                kind = str(update.get("sessionUpdate") or "").casefold()
+                meta = update.get("_meta") if isinstance(update.get("_meta"), dict) else {}
+                outer_meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
+                stamp = epoch(payload.get("timestamp") or meta.get("agentTimestampMs") or outer_meta.get("agentTimestampMs"))
+                event_id = str(meta.get("eventId") or outer_meta.get("eventId") or "")
+                content = update.get("content")
+                if isinstance(content, dict) and isinstance(content.get("text"), str):
+                    text = content["text"]
+                elif isinstance(content, str):
+                    text = content
+                else:
+                    text = content_text(content)
+                if kind == "user_message_chunk" and text:
+                    if current_role == "assistant":
+                        flush()
+                    if current_role != "user":
+                        current_role = "user"
+                        current_ts = stamp
+                        current_line = line_number
+                        current_event = event_id
+                    current_parts.append(text)
+                    continue
+                if kind == "agent_message_chunk" and text:
+                    if current_role == "user":
+                        flush()
+                    if current_role != "assistant":
+                        current_role = "assistant"
+                        current_ts = stamp
+                        current_line = line_number
+                        current_event = event_id
+                    current_parts.append(text)
+                    continue
+                if kind == "turn_completed" and current_role == "assistant":
+                    flush()
+    except OSError:
+        return messages
+    flush()
+    return messages
+
+
+def _load_grok(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    items: list[dict[str, Any]] = []
+    messages_by_id: dict[str, list[dict[str, Any]]] = {}
+    for summary_path in _grok_summary_files(path):
+        payload = json_value(summary_path.read_text(encoding="utf-8", errors="replace"), {})
+        if not isinstance(payload, dict):
+            continue
+        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+        if payload.get("parent_session_id") or info.get("parent_session_id"):
+            continue
+        session_id = str(info.get("id") or summary_path.parent.name).strip()
+        if not session_id:
+            continue
+        updates = summary_path.with_name("updates.jsonl")
+        messages = _parse_grok_updates(updates)
+        if messages:
+            messages_by_id[session_id] = messages
+        source_kind = "grok-updates" if messages else "grok-metadata-only"
+        items.append(
+            conversation(
+                "grok",
+                session_id,
+                payload.get("generated_title") or payload.get("session_summary"),
+                messages,
+                cwd=info.get("cwd") or "",
+                created_at=payload.get("created_at"),
+                updated_at=payload.get("last_active_at") or payload.get("updated_at"),
+                model=payload.get("current_model_id") or "",
+                source_kind=source_kind,
+                rollout_path=str(updates if updates.is_file() else summary_path),
+            )
+        )
+    items.sort(key=lambda item: item["updated_at"], reverse=True)
+    return items, messages_by_id
+
+
 def _load_qwenworkcn(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     # 千问办公会话与 Claude Code 同构（projects/<编码目录>/<会话>.jsonl），复用其解析器
     items, messages_by_id = _load_claude(path, "qwenworkcn")
@@ -1957,6 +2104,7 @@ LOADERS = {
     "qoder": _load_qoder,
     "qodercn": _load_qodercn,
     "qwenworkcn": _load_qwenworkcn,
+    "grok": _load_grok,
 }
 
 

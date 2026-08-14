@@ -1546,6 +1546,15 @@ def launch_targets_for(item: Conversation) -> list[dict[str, Any]]:
             "exact": True,
             "note": "在终端粘贴即可恢复这条会话；中心不会代你执行命令",
         }]
+    if item.source == "grok" and safe_session_id:
+        return [{
+            "target_id": "grok-resume-command",
+            "kind": "copy_command",
+            "label": "复制 Grok Build 恢复命令",
+            "value": f"grok --resume {session_id}",
+            "exact": True,
+            "note": "在终端粘贴即可恢复这条会话；中心不会代你执行命令",
+        }]
     if item.source == "workbuddy" and safe_session_id:
         return [{
             "target_id": "workbuddy-session",

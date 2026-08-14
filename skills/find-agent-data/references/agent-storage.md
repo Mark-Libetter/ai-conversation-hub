@@ -8,6 +8,7 @@ This registry records known-path rules, not installation claims. `verified` mean
 |---|---|---|---|---|
 | `codex` | verified | `$CODEX_HOME/state_5.sqlite` | `$CODEX_HOME/sessions/**/*.jsonl`, `archived_sessions/**/*.jsonl` | `CODEX_HOME` defaults to `~/.codex`. |
 | `claude` | verified | `~/.claude/history.jsonl` | `~/.claude/projects/**/*.jsonl` | Project folders hold full session JSONL. |
+| `grok` | verified | `$GROK_HOME/sessions/session_search.sqlite` (derived) | `$GROK_HOME/sessions/<encoded-cwd>/<session-id>/summary.json` + `updates.jsonl` | `GROK_HOME` defaults to `~/.grok`. Never read `auth.json`. Skip `subagents/` children. |
 | `hermes` | verified | `$CONVERSATION_HUB_HERMES_DB` or `$HERMES_HOME/state.db` | SQLite message rows | Prefer the explicit DB override. |
 | `workbuddy` | verified | `$WORKBUDDY_HOME/workbuddy.db` | DB plus `projects/` | Defaults to `~/.workbuddy`. |
 | `qoder` | verified | `%APPDATA%/Qoder/SharedClientCache/cache/db/local.db`; legacy `state.vscdb` | `~/.qoder/cache/projects/**/conversation-history/**/*.jsonl`, `~/.qoder/projects/**/transcript/*.jsonl` | Use `qoder_session_probe.py`; never decrypt `chat_message.content`. |
