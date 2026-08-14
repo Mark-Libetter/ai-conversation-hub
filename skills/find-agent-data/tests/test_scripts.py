@@ -27,6 +27,7 @@ def load_module(name: str, path: Path):
 
 finder = load_module("find_agent_data", ROOT / "scripts" / "find_agent_data.py")
 qoder = load_module("qoder_session_probe", ROOT / "scripts" / "qoder_session_probe.py")
+grok = load_module("grok_session_probe", ROOT / "scripts" / "grok_session_probe.py")
 
 
 class FinderTests(unittest.TestCase):
@@ -180,6 +181,107 @@ class SharedLayoutTests(unittest.TestCase):
             )
             self.assertEqual(["only-fixture"], [item["metadata"]["session_id"] for item in payload["sessions"]])
             self.assertEqual("metadata_only", payload["sessions"][0]["source_kind"])
+
+
+class GrokProbeTests(unittest.TestCase):
+    def test_finder_marks_search_db_as_context_only(self):
+        result = finder.collect_agent("grok", probe=False, existing_only=False)
+        self.assertEqual(result["id"], "grok")
+        roles = {item["role"]: item["conversation_evidence"] for item in result["locations"]}
+        self.assertTrue(roles["transcript_root"])
+        self.assertFalse(roles["session_index"])
+        self.assertFalse(roles["runtime_root"])
+
+    def test_maps_title_to_updates_and_skips_subagents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            main = home / "sessions" / "workspace" / "sess-main"
+            child = main / "subagents" / "child"
+            main.mkdir(parents=True)
+            child.mkdir(parents=True)
+            (main / "summary.json").write_text(
+                json.dumps({
+                    "info": {"id": "sess-main", "cwd": "C:/work/demo"},
+                    "generated_title": "对话中心 Grok fixture",
+                    "created_at": "2026-08-14T00:00:00Z",
+                    "updated_at": "2026-08-14T00:01:00Z",
+                    "current_model_id": "grok-4.6",
+                }),
+                encoding="utf-8",
+            )
+            (main / "updates.jsonl").write_text(
+                "\n".join([
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "user_message_chunk",
+                                "content": {"type": "text", "text": "Hello "},
+                                "_meta": {"eventId": "u1"},
+                            }
+                        }
+                    }),
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "user_message_chunk",
+                                "content": {"type": "text", "text": "Grok"},
+                            }
+                        }
+                    }),
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "agent_thought_chunk",
+                                "content": {"type": "text", "text": "hidden thought"},
+                            }
+                        }
+                    }),
+                    json.dumps({
+                        "params": {
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {"type": "text", "text": "Hi there"},
+                                "_meta": {"eventId": "a1"},
+                            }
+                        }
+                    }),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            (child / "summary.json").write_text(
+                json.dumps({
+                    "info": {"id": "child", "cwd": "C:/work/demo"},
+                    "generated_title": "hidden child",
+                    "parent_session_id": "sess-main",
+                }),
+                encoding="utf-8",
+            )
+            (child / "updates.jsonl").write_text(
+                json.dumps({
+                    "params": {
+                        "update": {
+                            "sessionUpdate": "user_message_chunk",
+                            "content": {"type": "text", "text": "child work"},
+                        }
+                    }
+                }) + "\n",
+                encoding="utf-8",
+            )
+
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = grok.main(
+                    ["--query", "对话中心", "--home", str(home), "--preview", "--json"]
+                )
+            payload = json.loads(stdout.getvalue())
+            chosen = payload["sessions"][0]["selected_transcript"]
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["schema"], "find-agent-data/grok-map-v1")
+            self.assertEqual(1, payload["matched_sessions"])
+            self.assertEqual("Hello Grok", chosen["preview"]["latest_user"]["text"])
+            self.assertEqual("Hi there", chosen["preview"]["latest_assistant_after_user"]["text"])
+            self.assertEqual(2, chosen["message_count"])
+            self.assertEqual("u1", chosen["first_evidence"]["event_id"])
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
+from agent_recovery.grok import discovery_locations as grok_locations  # noqa: E402
 from agent_recovery.qoder import layout as qoder_layout  # noqa: E402
 
 
@@ -40,7 +41,6 @@ WORKBUDDY_HOME = Path(os.environ.get("WORKBUDDY_HOME") or HOME / ".workbuddy")
 OPENCODE_HOME = Path(os.environ.get("OPENCODE_DATA_DIR") or HOME / ".local" / "share" / "opencode")
 HERMES_HOME = Path(os.environ.get("HERMES_HOME") or HOME / ".hermes")
 HERMES_DB = Path(os.environ.get("CONVERSATION_HUB_HERMES_DB") or HERMES_HOME / "state.db")
-GROK_HOME = Path(os.environ.get("GROK_HOME") or HOME / ".grok")
 
 
 # Confidence is about the storage rule, not whether the product is installed.
@@ -177,11 +177,7 @@ AGENTS: dict[str, dict[str, Any]] = {
     "grok": {
         "label": "Grok Build",
         "confidence": "verified",
-        "locations": [
-            location("transcript_root", GROK_HOME / "sessions", "jsonl"),
-            location("session_index", GROK_HOME / "sessions" / "session_search.sqlite", "sqlite", evidence=False),
-            location("runtime_root", GROK_HOME, "mixed", evidence=False),
-        ],
+        "locations": grok_locations(),
         "warnings": [
             "Prefer summary.json + updates.jsonl. Never read auth.json. session_search.sqlite is a derived search index, not the transcript source of truth.",
         ],

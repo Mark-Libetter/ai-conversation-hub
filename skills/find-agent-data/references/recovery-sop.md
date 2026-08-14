@@ -114,3 +114,15 @@ QoderCN:
 - full/CLI: `%APPDATA%/QoderCN/SharedClientCache/cli/projects/**/*.jsonl`
 
 `chat_message.content` is encrypted in observed versions and is outside this workflow. Do not decrypt it. The title index may cover sessions with no surviving plaintext transcript, so index count and recoverable transcript count must be reported separately.
+
+## Grok Build mapping notes
+
+Grok Build stores one directory per session under `$GROK_HOME/sessions/<encoded-cwd>/<session-id>/`. `GROK_HOME` defaults to `~/.grok`.
+
+- `summary.json` is the index: session ID, title, cwd, timestamps, model. It is not the transcript.
+- `updates.jsonl` is the recoverable conversation body. Keep `user_message_chunk` and `agent_message_chunk`; concatenate consecutive chunks of the same role.
+- Skip `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `session_recap`, and any path containing `subagents/`.
+- `session_search.sqlite` is a derived FTS index. Report it as context-only; do not treat it as a transcript candidate.
+- Never read `auth.json`.
+
+If `summary.json` exists but `updates.jsonl` has no user/assistant text, the recovery level is `metadata_only`.

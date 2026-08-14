@@ -5,7 +5,7 @@ description: Locate, inspect, map, and safely recover local conversation/data fi
 
 # Find Agent Data
 
-把本 skill 当作“本地 AI 会话发现与恢复层”，不是单纯的路径清单。Qoder/QoderCN 的映射实现只放在 `agent_recovery/`，对话中心适配器复用同一份代码。目标是输出可验证的链路：
+把本 skill 当作“本地 AI 会话发现与恢复层”，不是单纯的路径清单。Qoder/QoderCN 与 Grok Build 的映射实现只放在 `agent_recovery/`，对话中心适配器复用同一份代码。目标是输出可验证的链路：
 
 `产品 → 索引 → 正文候选 → 覆盖率选择 → 来源证据 → 局限`
 
@@ -33,6 +33,7 @@ python scripts/find_agent_data.py --existing-only --probe --json
 
 ```powershell
 python scripts/find_agent_data.py qoder --probe --json
+python scripts/find_agent_data.py grok --probe --json
 ```
 
 发现结果使用 `find-agent-data/v2` JSON。检查：
@@ -78,7 +79,30 @@ python scripts/qoder_session_probe.py --product qoder --query "继续codex项目
 
 若 `chat_session` 有标题但找不到明文候选，报告 `metadata_only`。若给出精确 session ID，即使索引已丢失，也可尝试从 transcript 根恢复。
 
-### 4. 备份、迁移或导出
+### 4. Grok Build 使用专用映射探针
+
+按标题查找且默认不显示正文：
+
+```powershell
+python scripts/grok_session_probe.py --query "对话中心" --json
+```
+
+需要回顾卡片时，显式增加 `--preview`：
+
+```powershell
+python scripts/grok_session_probe.py --query "对话中心" --preview --json
+```
+
+探针以 `summary.json` 为索引，正文只读 `updates.jsonl` 的 `user_message_chunk` / `agent_message_chunk`。它会：
+
+- 跳过 `agent_thought_chunk`、工具调用和 `subagents/` 子会话；
+- 合并同一轮的流式 chunk；
+- 保留行号、事件 ID 和行哈希；
+- 不读取 `auth.json` 或把 `session_search.sqlite` 当作正文。
+
+若只有 `summary.json`、没有可解析的 user/assistant 文本，报告 `metadata_only`。
+
+### 5. 备份、迁移或导出
 
 本 skill 只负责建立清单和证据链。实际写入前必须确认目的目录与范围，并排除：
 

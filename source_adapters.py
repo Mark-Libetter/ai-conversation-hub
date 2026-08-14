@@ -1888,139 +1888,44 @@ def _load_qodercn(path: Path):
     return _load_qoder_family("qodercn", path)
 
 
-def _grok_sessions_root(path: Path) -> Path:
-    sessions = path / "sessions"
-    return sessions if sessions.is_dir() else path
-
-
 def _grok_summary_files(path: Path) -> list[Path]:
-    root = _grok_sessions_root(path)
-    if not root.is_dir():
-        return []
-    result: list[Path] = []
-    for summary in root.rglob("summary.json"):
-        if any(part.casefold() == "subagents" for part in summary.parts):
-            continue
-        result.append(summary)
-    return result
+    from agent_recovery.grok import summary_files
 
-
-def _parse_grok_updates(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    try:
-        if path.stat().st_size > MAX_CLAUDE_TRANSCRIPT_BYTES:
-            return []
-    except OSError:
-        return []
-
-    messages: list[dict[str, Any]] = []
-    current_role = ""
-    current_parts: list[str] = []
-    current_ts = 0.0
-    current_line = 0
-    current_event = ""
-
-    def flush() -> None:
-        nonlocal current_role, current_parts, current_ts, current_line, current_event
-        text = redact("".join(current_parts)).strip()
-        if current_role and text:
-            messages.append(
-                {
-                    "role": current_role,
-                    "text": text,
-                    "timestamp": current_ts,
-                    "line": current_line,
-                    "event_id": current_event,
-                }
-            )
-        current_role = ""
-        current_parts = []
-        current_ts = 0.0
-        current_line = 0
-        current_event = ""
-
-    try:
-        with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
-            for line_number, raw in enumerate(handle, start=1):
-                payload = json_value(raw, None)
-                if not isinstance(payload, dict):
-                    continue
-                params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
-                update = params.get("update") if isinstance(params.get("update"), dict) else {}
-                kind = str(update.get("sessionUpdate") or "").casefold()
-                meta = update.get("_meta") if isinstance(update.get("_meta"), dict) else {}
-                outer_meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
-                stamp = epoch(payload.get("timestamp") or meta.get("agentTimestampMs") or outer_meta.get("agentTimestampMs"))
-                event_id = str(meta.get("eventId") or outer_meta.get("eventId") or "")
-                content = update.get("content")
-                if isinstance(content, dict) and isinstance(content.get("text"), str):
-                    text = content["text"]
-                elif isinstance(content, str):
-                    text = content
-                else:
-                    text = content_text(content)
-                if kind == "user_message_chunk" and text:
-                    if current_role == "assistant":
-                        flush()
-                    if current_role != "user":
-                        current_role = "user"
-                        current_ts = stamp
-                        current_line = line_number
-                        current_event = event_id
-                    current_parts.append(text)
-                    continue
-                if kind == "agent_message_chunk" and text:
-                    if current_role == "user":
-                        flush()
-                    if current_role != "assistant":
-                        current_role = "assistant"
-                        current_ts = stamp
-                        current_line = line_number
-                        current_event = event_id
-                    current_parts.append(text)
-                    continue
-                if kind == "turn_completed" and current_role == "assistant":
-                    flush()
-    except OSError:
-        return messages
-    flush()
-    return messages
+    return summary_files(path)
 
 
 def _load_grok(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    from agent_recovery.grok import recover_all
+
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
-    for summary_path in _grok_summary_files(path):
-        payload = json_value(summary_path.read_text(encoding="utf-8", errors="replace"), {})
-        if not isinstance(payload, dict):
-            continue
-        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
-        if payload.get("parent_session_id") or info.get("parent_session_id"):
-            continue
-        session_id = str(info.get("id") or summary_path.parent.name).strip()
-        if not session_id:
-            continue
-        updates = summary_path.with_name("updates.jsonl")
-        messages = _parse_grok_updates(updates)
+    for session in recover_all(path, include_messages=True, include_preview=False):
+        messages = [
+            {
+                "role": message["role"],
+                "text": message["text"],
+                "timestamp": message.get("timestamp") or 0,
+                "line": (message.get("evidence") or {}).get("line"),
+                "event_id": str((message.get("evidence") or {}).get("event_id") or ""),
+            }
+            for message in session.messages
+        ]
         if messages:
-            messages_by_id[session_id] = messages
-        source_kind = "grok-updates" if messages else "grok-metadata-only"
+            messages_by_id[session.session_id] = messages
         items.append(
             conversation(
                 "grok",
-                session_id,
-                payload.get("generated_title") or payload.get("session_summary"),
+                session.session_id,
+                session.title,
                 messages,
-                cwd=info.get("cwd") or "",
-                created_at=payload.get("created_at"),
-                updated_at=payload.get("last_active_at") or payload.get("updated_at"),
-                model=payload.get("current_model_id") or "",
-                source_kind=source_kind,
-                rollout_path=str(updates if updates.is_file() else summary_path),
+                cwd=session.cwd,
+                created_at=session.created,
+                updated_at=session.updated,
+                model=session.model,
+                source_kind="grok-updates" if session.source_kind == "transcript" else "grok-metadata-only",
+                rollout_path=str(session.selected_path or path),
             )
         )
-    items.sort(key=lambda item: item["updated_at"], reverse=True)
     return items, messages_by_id
 
 
