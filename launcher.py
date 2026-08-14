@@ -10,10 +10,10 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
+from app_paths import CONFIG_PATH, DATA_DIR
+
 
 APP_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "AIConversationHub"
-CONFIG_PATH = DATA_DIR / "sources.json"
 URL = "http://127.0.0.1:8765/"
 REQUIRED_APP_VERSION = "0.4.0"
 
@@ -35,9 +35,12 @@ def get_json(path: str) -> dict | None:
         return None
 
 
-def pythonw() -> str:
-    candidate = Path(sys.executable).with_name("pythonw.exe")
-    return str(candidate if candidate.is_file() else sys.executable)
+def python_executable() -> str:
+    if os.name == "nt":
+        candidate = Path(sys.executable).with_name("pythonw.exe")
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
 
 
 def ensure_grok_enabled() -> None:
@@ -91,8 +94,14 @@ def post_json(path: str, body: dict) -> dict | None:
 
 
 def stop_stale_hub_processes() -> None:
-    if os.name != "nt":
+    if os.name == "nt":
+        _stop_stale_hub_processes_windows()
         return
+    if sys.platform == "darwin":
+        _stop_stale_hub_processes_posix()
+
+
+def _stop_stale_hub_processes_windows() -> None:
     completed = subprocess.run(
         [
             "powershell",
@@ -139,9 +148,39 @@ def stop_stale_hub_processes() -> None:
     time.sleep(0.6)
 
 
+def _stop_stale_hub_processes_posix() -> None:
+    completed = subprocess.run(
+        ["pgrep", "-fl", "AIConversationHub|ai-conversation-hub|server.py"],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    self_pid = os.getpid()
+    markers = ("aiconversationhub", "ai-conversation-hub", "conversation_hub")
+    for line in (completed.stdout or "").splitlines():
+        parts = line.split(None, 1)
+        if len(parts) < 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        command = parts[1].casefold()
+        if pid in {0, self_pid} or "launcher.py" in command:
+            continue
+        if any(marker in command for marker in markers):
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                continue
+    time.sleep(0.6)
+
+
 def start_current_server() -> None:
     subprocess.Popen(
-        [pythonw(), str(APP_DIR / "server.py"), "--no-open"],
+        [python_executable(), str(APP_DIR / "server.py"), "--no-open"],
         cwd=str(APP_DIR),
         **process_options(detached=True),
     )

@@ -70,7 +70,7 @@ python3 server.py       # macOS / Linux
 - macOS：双击 `start-macos.command`
 - 命令行：`python server.py`，然后浏览器打开 `http://127.0.0.1:8765`
 
-> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Grok Build / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / 千问办公 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。源码仓库与用户数据分离：Windows 下源码检出复用 `%LOCALAPPDATA%\AIConversationHub` 里的笔记和 `sources.json`。Qoder 恢复实现只在 `skills/find-agent-data/agent_recovery/`。
+> 📂 **自动发现路径**：首次启动时，Hub 会按已知默认位置发现数据源。Codex / Hermes / WorkBuddy 为核心源；Claude Code / Grok Build / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / 千问办公 可在设置中验证后启用。只有安装路径非默认或适配器要求手动数据库路径时才需要配置。源码仓库与用户数据分离：Windows 下源码检出复用 `%LOCALAPPDATA%\AIConversationHub` 里的笔记和 `sources.json`；macOS 使用 `~/Library/Application Support/AIConversationHub/UserData`。Grok Build 在两端都读 `~/.grok/sessions`。Qoder / Grok 恢复实现只在 `skills/find-agent-data/agent_recovery/`。
 
 **第 2 步：确认数据源**（如果左侧栏没显示对话）
 1. 点击左侧栏底部「设置」⚙
@@ -127,7 +127,7 @@ python3 server.py       # macOS / Linux
 正式 EXE 内置系统托盘并使用实际监听端口；托盘可打开中心、切换开机启动，或退出整个中心。源码兼容入口 `start-tray.vbs` 使用相对安装路径，不再绑定某台电脑的绝对路径。
 
 ### 桌面启动（macOS）
-双击 `start-macos.command` 即可。
+双击 `start-macos.command`。若 Gatekeeper 拦截，请 Control-点击该文件，选「打开」。脚本会启动当前 `launcher.py`，在发现 `~/.grok/sessions` 时启用 Grok Build，并打开浏览器。续接仍是复制 `grok --resume <会话ID>`，在「终端」里粘贴运行。
 
 ## 内置数据源
 

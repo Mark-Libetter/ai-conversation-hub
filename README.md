@@ -72,7 +72,7 @@ Open `http://127.0.0.1:8765` in your browser.
 
 > 📂 **Auto-discovery**: Core sources are Codex / Hermes / WorkBuddy. Claude Code / Grok Build / Cursor / QClaw / QoderWork / ZCode / CodePilot / Marvis / Qoder / QoderCN / QwenWorkCN can be validated and enabled in Settings. Manual configuration is needed for non-default or adapter-specific database paths.
 
-Development happens in this source tree. On Windows, a source checkout reuses `%LOCALAPPDATA%\AIConversationHub` for `sources.json` and notes so user data stays out of git. Qoder recovery is implemented once in `skills/find-agent-data/agent_recovery/`.
+Development happens in this source tree. On Windows, a source checkout reuses `%LOCALAPPDATA%\AIConversationHub` for `sources.json` and notes so user data stays out of git. On macOS, notes and `sources.json` live in `~/Library/Application Support/AIConversationHub/UserData`. Grok Build sessions are read from `~/.grok/sessions` on both platforms. Qoder and Grok recovery live in `skills/find-agent-data/agent_recovery/`.
 
 **Step 2: Confirm data sources** (if the sidebar shows no conversations)
 1. Click **Settings** ⚙ at the bottom of the sidebar
@@ -128,7 +128,7 @@ Double-click `launcher.py` or run `python launcher.py` — starts the server and
 The packaged EXE includes an in-process system tray tied to the actual listener port. It can open the Hub, toggle startup, or exit the whole app. The source fallback `start-tray.vbs` uses paths relative to its installation folder.
 
 ### Desktop launch (macOS)
-Double-click `start-macos.command`.
+Double-click `start-macos.command`. The first time, Control-click it and choose **Open** if Gatekeeper warns. The script starts `launcher.py`, enables Grok Build when `~/.grok/sessions` exists, and opens the browser. Grok continuation still copies `grok --resume <id>`; run that in Terminal.
 
 ## Built-in data sources
 

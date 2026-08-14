@@ -59,6 +59,8 @@ def main() -> int:
 
         assert source_adapters.default_candidates("zcode"), "zcode candidate missing"
         assert source_adapters.default_candidates("qoderwork"), "qoderwork candidate missing"
+        grok_homes = source_adapters.default_candidates("grok")
+        assert grok_homes and grok_homes[0].name == ".grok", grok_homes
         print("PASS: adapter discovery helpers return candidates on", sys.platform)
 
         # macOS 路径形式验证：确认 default_candidates 在 darwin 上走 ~/Library 路径

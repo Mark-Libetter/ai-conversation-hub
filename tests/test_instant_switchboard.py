@@ -253,6 +253,18 @@ class InstantIndexTests(unittest.TestCase):
 
 
 class AdapterRegistryTests(unittest.TestCase):
+    def test_grok_default_home_is_user_dot_grok(self) -> None:
+        homes = source_adapters.default_candidates("grok")
+        self.assertEqual(Path(os.environ.get("GROK_HOME") or (Path.home() / ".grok")), homes[0])
+
+    def test_launcher_writes_grok_into_the_hub_data_dir(self) -> None:
+        import launcher
+
+        launcher.ensure_grok_enabled()
+        payload = json.loads(Path(os.environ["CONVERSATION_HUB_DATA_DIR"], "sources.json").read_text(encoding="utf-8"))
+        self.assertTrue(payload["extra_sources"]["grok"]["enabled"])
+        self.assertTrue(str(payload["extra_sources"]["grok"]["path"]).endswith(".grok"))
+
     def test_all_bundled_loaders_are_registered(self) -> None:
         expected = {
             "claude", "cursor", "qclaw", "qoderwork", "zcode", "codepilot", "marvis",
