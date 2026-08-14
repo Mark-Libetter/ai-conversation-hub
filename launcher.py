@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -11,7 +12,10 @@ from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "AIConversationHub"
+CONFIG_PATH = DATA_DIR / "sources.json"
 URL = "http://127.0.0.1:8765/"
+REQUIRED_APP_VERSION = "0.4.0"
 
 
 def process_options(*, detached: bool = False) -> dict:
@@ -31,13 +35,48 @@ def get_json(path: str) -> dict | None:
         return None
 
 
-def reload_running_server() -> bool:
+def pythonw() -> str:
+    candidate = Path(sys.executable).with_name("pythonw.exe")
+    return str(candidate if candidate.is_file() else sys.executable)
+
+
+def ensure_grok_enabled() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    payload: dict = {}
+    try:
+        loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            payload = loaded
+    except (OSError, ValueError, TypeError):
+        payload = {}
+    extra = payload.get("extra_sources")
+    extra = extra if isinstance(extra, dict) else {}
+    grok = extra.get("grok")
+    grok = grok if isinstance(grok, dict) else {}
+    extra["grok"] = {
+        "enabled": True,
+        "path": grok.get("path") or str(Path.home() / ".grok"),
+    }
+    payload["extra_sources"] = extra
+    CONFIG_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def running_server_is_current() -> bool:
+    health = get_json("/api/health")
+    if not health or str(health.get("app_version") or "") < REQUIRED_APP_VERSION:
+        return False
+    setup = get_json("/api/setup/status") or {}
+    grok = ((setup.get("sources") or {}).get("grok") or {})
+    return bool(grok.get("enabled") and grok.get("valid"))
+
+
+def post_json(path: str, body: dict) -> dict | None:
     token_data = get_json("/api/token")
     if not token_data:
-        return False
+        return None
     request = urllib.request.Request(
-        URL.rstrip("/") + "/api/reload-sources",
-        data=b"{}",
+        URL.rstrip("/") + path,
+        data=json.dumps(body).encode("utf-8"),
         method="POST",
         headers={
             "Content-Type": "application/json",
@@ -45,31 +84,84 @@ def reload_running_server() -> bool:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status == 200
-    except (OSError, urllib.error.URLError):
-        return False
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+
+
+def stop_stale_hub_processes() -> None:
+    if os.name != "nt":
+        return
+    completed = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine } | "
+            "Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **process_options(),
+    )
+    raw = (completed.stdout or "").strip()
+    if not raw:
+        return
+    try:
+        rows = json.loads(raw)
+    except ValueError:
+        return
+    if isinstance(rows, dict):
+        rows = [rows]
+    markers = (
+        "aiconversationhub.exe",
+        r"\aiconversationhub\server.py",
+        r"\aiconversationhub\desktop_app.py",
+        r"\programs\aiconversationhub",
+        r"\desktop\aiconversationhub",
+        r"\ai-conversation-hub\server.py",
+        r"\ai-conversation-hub\desktop_app.py",
+    )
+    self_pid = os.getpid()
+    for row in rows:
+        pid = int(row.get("ProcessId") or 0)
+        command = str(row.get("CommandLine") or "").casefold()
+        name = str(row.get("Name") or "").casefold()
+        if pid in {0, self_pid} or "launcher.py" in command:
+            continue
+        if name == "aiconversationhub.exe" or any(marker in command for marker in markers):
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False, **process_options())
+    time.sleep(0.6)
+
+
+def start_current_server() -> None:
+    subprocess.Popen(
+        [pythonw(), str(APP_DIR / "server.py"), "--no-open"],
+        cwd=str(APP_DIR),
+        **process_options(detached=True),
+    )
+    for _ in range(60):
+        if get_json("/api/health"):
+            return
+        time.sleep(0.25)
 
 
 def main() -> None:
-    subprocess.run(
-        [sys.executable, str(APP_DIR / "repair_sources.py"), "--quiet"],
-        cwd=APP_DIR,
-        check=False,
-        **process_options(),
-    )
-    if get_json("/api/sources"):
-        reload_running_server()
+    os.chdir(APP_DIR)
+    ensure_grok_enabled()
+    if not running_server_is_current():
+        stop_stale_hub_processes()
+        start_current_server()
+        post_json("/api/sources/enabled", {"source": "grok", "enabled": True})
+        post_json("/api/refresh", {})
     else:
-        subprocess.Popen(
-            [sys.executable, str(APP_DIR / "server.py"), "--no-open"],
-            cwd=APP_DIR,
-            **process_options(detached=True),
-        )
-        for _ in range(40):
-            if get_json("/api/sources"):
-                break
-            time.sleep(0.25)
+        post_json("/api/sources/enabled", {"source": "grok", "enabled": True})
+        post_json("/api/refresh", {})
     webbrowser.open(URL)
 
 

@@ -263,13 +263,18 @@ def save_setup(payload: dict[str, Any]) -> dict[str, Any]:
         current["core_sources"] = core_values
     if isinstance(payload.get("extra_sources"), dict):
         extra_values: dict[str, dict[str, Any]] = {}
+        existing = current.get("extra_sources")
+        existing = existing if isinstance(existing, dict) else {}
         for source in EXTRA_SOURCES:
-            raw = payload["extra_sources"].get(source)
-            raw = raw if isinstance(raw, dict) else {}
-            extra_values[source] = {
-                "enabled": bool(raw.get("enabled", False)),
-                "path": clean_text(raw.get("path"), 2000),
-            }
+            if source in payload["extra_sources"]:
+                raw = payload["extra_sources"].get(source)
+                raw = raw if isinstance(raw, dict) else {}
+                extra_values[source] = {
+                    "enabled": bool(raw.get("enabled", False)),
+                    "path": clean_text(raw.get("path"), 2000),
+                }
+            elif isinstance(existing.get(source), dict):
+                extra_values[source] = existing[source]
         current["extra_sources"] = extra_values
     if isinstance(payload.get("custom_sources"), list):
         custom_values: list[dict[str, Any]] = []
