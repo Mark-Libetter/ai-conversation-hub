@@ -408,11 +408,24 @@
           <button class="button ghost export-conversation" type="button">导出 Markdown</button>
         </div>
         <p class="launch-note muted"></p>
-        <section class="review-block">
-          <div class="section-heading">
-            <div><h3>对话回顾卡</h3><p class="muted">本地提取已完成、决定、未完成、阻塞、提交和文件，保留原文证据。</p></div>
-            <span class="review-state muted"></span>
+        <section class="messages-block">
+          <div class="messages-heading"><h3>对话</h3><span class="message-count muted"></span></div>
+          <div class="message-tools">
+            <div class="segments message-role-filter" role="group" aria-label="消息角色">
+              <button class="segment active" data-role="all" type="button">全部</button>
+              <button class="segment" data-role="user" type="button">你</button>
+              <button class="segment" data-role="assistant" type="button">助手</button>
+            </div>
+            <label class="fold-process-toggle">
+              <input class="fold-process-input" type="checkbox">
+              <span>折叠思考 / 过程</span>
+            </label>
           </div>
+          <div class="messages"></div>
+        </section>
+        <details class="detail-collapsible review-block">
+          <summary><span>对话回顾卡</span><span class="review-state muted"></span></summary>
+          <p class="muted">本地提取已完成、决定、未完成、阻塞、提交和文件，保留原文证据。</p>
           <div class="continuation-actions">
             <button class="button secondary generate-review" type="button">生成回顾卡</button>
             <button class="button secondary copy-review" type="button" hidden>复制 Markdown</button>
@@ -422,12 +435,10 @@
             <textarea class="review-output" rows="12" readonly aria-label="对话回顾卡 Markdown"></textarea>
             <p class="muted">固定规则、本机生成、不调用模型；历史内容不会被当成新授权。</p>
           </div>
-        </section>
-        <section class="continuation-block">
-          <div class="section-heading">
-            <div><h3>跨 Agent 接续</h3><p class="muted">生成可追溯的本地接续包，再粘贴给任意 Agent。</p></div>
-            <span class="continuation-state muted"></span>
-          </div>
+        </details>
+        <details class="detail-collapsible continuation-block">
+          <summary><span>跨 Agent 接续</span><span class="continuation-state muted"></span></summary>
+          <p class="muted">生成可追溯的本地接续包，再粘贴给任意 Agent。</p>
           <div class="continuation-actions">
             <button class="button primary generate-continuation" type="button">生成接续包</button>
             <button class="button secondary copy-continuation" type="button" hidden>复制 Markdown</button>
@@ -448,12 +459,13 @@
             </div>
             <p class="memory-save-state muted"></p>
           </details>
-        </section>
-        <section class="overview-block">
-          <h3>可追溯概览</h3><dl class="overview"></dl>
-        </section>
-        <section class="note-block">
-          <div class="section-heading"><h3>我的管理信息</h3><span class="save-state muted"></span></div>
+        </details>
+        <details class="detail-collapsible overview-block">
+          <summary>可追溯概览</summary>
+          <dl class="overview"></dl>
+        </details>
+        <details class="detail-collapsible note-block">
+          <summary><span>我的管理信息</span><span class="save-state muted"></span></summary>
           <div class="note-field">
             <span class="note-field-label">状态</span>
             <select class="user-status" aria-label="自定义状态">
@@ -478,21 +490,10 @@
             <span class="note-field-label">备注</span>
             <textarea class="note-input" rows="4" placeholder="记录结论、下一步或为什么值得保留…（自动保存，支持 Ctrl+Z 撤销）"></textarea>
           </div>
-        </section>
+        </details>
         <section class="related-block" hidden>
           <div class="section-heading"><h3>跨 Agent 相关对话</h3><span class="related-count muted"></span></div>
           <div class="related-conversations"></div>
-        </section>
-        <section class="messages-block">
-          <div class="messages-heading"><h3>最近上下文</h3><span class="message-count muted"></span></div>
-          <div class="message-tools">
-            <div class="segments message-role-filter" role="group" aria-label="消息角色">
-              <button class="segment active" data-role="all" type="button">全部</button>
-              <button class="segment" data-role="user" type="button">用户</button>
-              <button class="segment" data-role="assistant" type="button">助手</button>
-            </div>
-          </div>
-          <div class="messages"></div>
         </section>
       </div>
     </template>

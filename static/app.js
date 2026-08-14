@@ -483,6 +483,69 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const FOLD_PROCESS_KEY = "conversation-hub-fold-process";
+const THINKING_TAG_RE = /<(thinking|think|thought|reasoning|redacted_thinking)>([\s\S]*?)<\/\1>/gi;
+const SYSTEM_TAG_RE = /<system-reminder>([\s\S]*?)<\/system-reminder>/gi;
+const USER_QUERY_RE = /<user_query>([\s\S]*?)<\/user_query>/gi;
+const LONG_FENCE_RE = /```[^\n]*\n([\s\S]*?)```/g;
+const PROCESS_PARA_RE = /^(?:the user\b|i(?:'m|'ll| am| will| need| should| can| think| see| have| want to)\b|let me\b|looking at\b|this (?:is|looks|seems)\b|we (?:need|should|can)\b|okay[,.]|alright[,.]|based on\b|from the (?:code|file|output|diff)\b|i'll\b|the count is\b|wait[,.]|hmm[,.]|我(?:需要|先|来|会|将|觉得|看)|让我|接下来我|首先(?:，|,)|根据.{0,16}(?:代码|文件|输出|结果))/i;
+
+function foldProcessEnabled() {
+  return localStorage.getItem(FOLD_PROCESS_KEY) !== "0";
+}
+
+function setFoldProcessEnabled(on) {
+  localStorage.setItem(FOLD_PROCESS_KEY, on ? "1" : "0");
+}
+
+function splitMessageBody(text, role) {
+  const folded = [];
+  let main = String(text || "");
+  if (role === "user") {
+    const queries = [...main.matchAll(USER_QUERY_RE)].map((match) => match[1].trim()).filter(Boolean);
+    if (queries.length) {
+      const remainder = main.replace(USER_QUERY_RE, "\n").replace(SYSTEM_TAG_RE, "\n").trim();
+      if (remainder) folded.push({ kind: "system", title: "附加上下文", text: remainder });
+      main = queries[queries.length - 1];
+    }
+  }
+  main = main.replace(THINKING_TAG_RE, (_, __, body) => {
+    if (body.trim()) folded.push({ kind: "thinking", title: "思考过程", text: body.trim() });
+    return "\n";
+  });
+  main = main.replace(SYSTEM_TAG_RE, (_, body) => {
+    if (body.trim()) folded.push({ kind: "system", title: "系统注入", text: body.trim() });
+    return "\n";
+  });
+  main = main.replace(LONG_FENCE_RE, (block) => {
+    const lines = block.split("\n").length;
+    if (lines < 18) return block;
+    folded.push({ kind: "dump", title: `长输出 · ${lines} 行`, text: block });
+    return "\n";
+  });
+  main = main.replace(/\n{3,}/g, "\n\n").trim();
+  if (role === "assistant" && main) {
+    const parts = main.split(/\n{2,}/);
+    let count = 0;
+    while (count < parts.length - 1 && PROCESS_PARA_RE.test(parts[count].trim())) count += 1;
+    if (count > 0) {
+      folded.unshift({ kind: "thinking", title: "思考 / 过程", text: parts.slice(0, count).join("\n\n") });
+      main = parts.slice(count).join("\n\n").trim();
+    }
+  }
+  if (!main && folded.length) {
+    const first = folded.shift();
+    main = first.text;
+  }
+  return { main, folded };
+}
+
+function clampText(text, limit = 220) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (value.length <= limit) return { short: value, rest: "" };
+  return { short: value.slice(0, limit).trimEnd() + "…", rest: String(text || "").trim() };
+}
+
 function highlightHtml(value, query) {
   const raw = String(value ?? "");
   const needles = (Array.isArray(query) ? query : [query])
@@ -1836,9 +1899,11 @@ function renderDetail(data) {
     ["最新请求", data.overview.latest_request || "未提取到"],
     ["最新回应", data.overview.latest_response || "未提取到"],
   ];
-  fragment.querySelector(".overview").innerHTML = overviewRows.map(([term, text]) =>
-    `<div><dt>${term}</dt><dd>${escapeHtml(text)}</dd></div>`
-  ).join("");
+  fragment.querySelector(".overview").innerHTML = overviewRows.map(([term, text]) => {
+    const clipped = clampText(text, 180);
+    if (!clipped.rest) return `<div><dt>${term}</dt><dd>${escapeHtml(clipped.short)}</dd></div>`;
+    return `<div><dt>${term}</dt><dd><details class="overview-clamp"><summary>${escapeHtml(clipped.short)}</summary><div class="overview-full">${escapeHtml(clipped.rest)}</div></details></dd></div>`;
+  }).join("");
 
   const status = fragment.querySelector(".user-status");
   status.value = item.user_status || "";
@@ -1873,6 +1938,7 @@ function renderDetail(data) {
   let fullMessagesLoading = false;
   const messagesRoot = fragment.querySelector(".messages");
   const messageCount = fragment.querySelector(".message-count");
+  const foldProcessInput = fragment.querySelector(".fold-process-input");
   const roleButtons = [...fragment.querySelectorAll(".message-role-filter [data-role]")];
   const messageSearch = fragment.querySelector(".conversation-search-input");
   const messageSearchState = fragment.querySelector(".conversation-search-state");
@@ -1897,12 +1963,27 @@ function renderDetail(data) {
     previousMatchButton.disabled = filtered.length < 2;
     nextMatchButton.disabled = filtered.length < 2;
     clearMessageSearchButton.disabled = !needle;
-    messagesRoot.innerHTML = filtered.length ? filtered.map((message, index) => `
+    const foldProcess = foldProcessEnabled();
+    messagesRoot.innerHTML = filtered.length ? filtered.map((message, index) => {
+      const parts = splitMessageBody(message.text, message.role);
+      const foldedHtml = parts.folded.map((block) => {
+        const hit = needle && block.text.toLocaleLowerCase().includes(needle);
+        const open = !foldProcess || hit ? " open" : "";
+        return `<details class="message-fold ${escapeHtml(block.kind)}"${open}>
+          <summary>${escapeHtml(block.title)}</summary>
+          <div class="message-fold-body">${highlightHtml(block.text, messageQuery)}</div>
+        </details>`;
+      }).join("");
+      return `
       <article class="message ${message.role}${needle && index === activeMessageMatch ? " active-match" : ""}"
         data-message-match="${needle ? index : ""}">
-        <div class="message-head"><strong>${message.role === "user" ? "用户" : "助手"}</strong><span>${dateTime(message.timestamp)}</span></div>
-        <div class="message-text">${highlightHtml(message.text, messageQuery)}</div>
-      </article>`).join("") : `<p class="muted">当前条件下没有消息。</p>`;
+        <div class="message-head"><strong>${message.role === "user" ? "你" : "助手"}</strong><span>${dateTime(message.timestamp)}</span></div>
+        <div class="message-bubble">
+          ${parts.main ? `<div class="message-text">${highlightHtml(parts.main, messageQuery)}</div>` : ""}
+          ${foldedHtml}
+        </div>
+      </article>`;
+    }).join("") : `<p class="muted">当前条件下没有消息。</p>`;
   };
 
   const focusMessageMatch = (direction = 0) => {
@@ -1933,6 +2014,14 @@ function renderDetail(data) {
       if (messageQuery.trim()) focusMessageMatch(0);
     }
   };
+
+  if (foldProcessInput) {
+    foldProcessInput.checked = foldProcessEnabled();
+    foldProcessInput.addEventListener("change", () => {
+      setFoldProcessEnabled(foldProcessInput.checked);
+      renderMessages();
+    });
+  }
 
   renderMessages();
 
