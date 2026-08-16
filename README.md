@@ -5,6 +5,8 @@
 > An instant local conversation switchboard for AI coding assistants: search, locate, continue.
 > Local-first, zero dependencies, read-only to your original data.
 
+**Current version: v0.4.0**
+
 ## What it does
 
 If you work across several AI coding assistants, your conversations live in each one separately. The Hub makes the primary path three steps: **search → select → continue**.
@@ -54,7 +56,7 @@ As a side note, this is the author's first vibe coding project. Bug reports are 
 - Python 3.10+ (standard library only)
 - Windows / macOS
 
-> ⚠️ **Platform note**: Currently **fully tested on Windows only** (v0.1.8 passed real-device testing). macOS has adapter code and a launch script, but the author doesn't have a Mac to verify personally — if you're on macOS, please try it and let me know via an issue whether it runs.
+> ⚠️ **Platform note**: v0.4.0 has completed full local Windows testing, while GitHub CI verifies the Windows, macOS, and Linux source paths. The macOS package is built automatically but has not received author-owned real-device acceptance because the author does not have a Mac; field reports are welcome.
 
 ### Run
 ```bash
@@ -168,7 +170,7 @@ Double-click `start-macos.command`. The first time, Control-click it and choose 
 ## Features
 
 ### Find
-- Boolean full-text search across 10 built-in and custom sources
+- Boolean full-text search across 14 built-in adapters and custom sources
 - Filters: time range, status, workspace, favorites-only
 - Conversation detail: overview, favorites, tags, notes, Markdown export
 - Batch export of selected conversations

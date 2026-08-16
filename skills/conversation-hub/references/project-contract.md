@@ -5,16 +5,46 @@ Use this reference only when a repository needs a new or repaired cross-agent co
 ## Required repository files
 
 ```text
+AGENTS.md
 PROJECT.md
 DECISIONS.md
 TASKS.md
 handoffs/T-001.md
 ```
 
+- `AGENTS.md`: repository-wide read order, safety boundaries, validation, and Git delivery rules.
 - `PROJECT.md`: stable objective, scope, architecture, and Definition of Done.
 - `DECISIONS.md`: accepted and rejected choices with reasons and reconsideration triggers.
 - `TASKS.md`: small current tasks, dependencies, owners, and status.
 - `handoffs/T-xxx.md`: the authorization and evidence record for one task.
+
+## When to initialize
+
+Initialize the contract before implementation when the repository work will span agents, sessions, separately reviewable tasks, or multiple delivery phases such as implementation plus release. The first coordinating agent owns initialization unless the repository names another contract steward.
+
+Do not initialize it for a single small edit or a read-only inspection. If only part of the contract exists, preserve it and repair missing pieces; never overwrite decisions merely to fit a template.
+
+The bundled initializer creates a complete first task without overwriting existing contract files. Supply concrete values derived from the user's current request:
+
+```text
+py -3 skills/conversation-hub/scripts/init_project_contract.py <repo> \
+  --project-title "Project name" \
+  --project-goal "Observable project outcome" \
+  --task-title "First bounded task" \
+  --task-goal "Observable task outcome" \
+  --scope "Allowed files or modules" \
+  --acceptance "Objective completion check"
+```
+
+Run `validate_project_contract.py` after creation and before implementation.
+
+## Lifecycle ownership
+
+- The coordinating agent is contract steward: it keeps `PROJECT.md`, `DECISIONS.md`, and `TASKS.md` coherent.
+- The active task owner maintains its own handoff before editing and after every material state or owner change.
+- The integration owner records commit, push, merge, tag, deployment, or release evidence; possessing credentials is not authorization.
+- A reviewer changes a task to `review` or returns evidence; only the authorized owner/integrator records final delivery and `done`.
+- Keep at most one `active` task in a shared worktree. Independent writers require verified isolated worktrees.
 
 ## Handoff template
 

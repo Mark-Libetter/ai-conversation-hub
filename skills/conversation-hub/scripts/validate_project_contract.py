@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-REQUIRED_ROOT_FILES = ("PROJECT.md", "DECISIONS.md", "TASKS.md")
+REQUIRED_ROOT_FILES = ("AGENTS.md", "PROJECT.md", "DECISIONS.md", "TASKS.md")
 REQUIRED_FRONTMATTER = ("task_id", "status", "owner_role", "updated")
 REQUIRED_SECTIONS = (
     "Goal",
@@ -63,6 +63,36 @@ def markdown_sections(text: str) -> set[str]:
     }
 
 
+def section_body(text: str, section: str) -> str:
+    text = text.replace("\r\n", "\n")
+    match = re.search(
+        rf"^##\s+{re.escape(section)}\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text,
+        flags=re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def task_rows(text: str) -> tuple[dict[str, str], list[str]]:
+    rows: dict[str, str] = {}
+    errors: list[str] = []
+    for line in text.replace("\r\n", "\n").splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or not re.fullmatch(r"T-\d+", cells[0]):
+            continue
+        task_id, status = cells[0], cells[2]
+        if task_id in rows:
+            errors.append(f"TASKS.md: duplicate task {task_id}")
+        rows[task_id] = status
+        if status not in TASK_STATUSES:
+            errors.append(f"TASKS.md: {task_id} has invalid status {status}")
+    if not rows:
+        errors.append("TASKS.md: no task rows found")
+    return rows, errors
+
+
 def git_fields(text: str) -> dict[str, str]:
     text = text.replace("\r\n", "\n")
     match = re.search(
@@ -93,7 +123,10 @@ def validate(root: Path) -> dict[str, object]:
 
     task_path = root / "TASKS.md"
     task_text = task_path.read_text(encoding="utf-8") if task_path.is_file() else ""
+    tasks, task_errors = task_rows(task_text)
+    errors.extend(task_errors)
     checked: list[str] = []
+    active_work_branches: dict[str, list[str]] = {}
     for path in handoffs:
         text = path.read_text(encoding="utf-8")
         frontmatter = parse_frontmatter(text)
@@ -101,16 +134,29 @@ def validate(root: Path) -> dict[str, object]:
             if not frontmatter.get(key):
                 errors.append(f"{path.name}: missing frontmatter field {key}")
         task_id = frontmatter.get("task_id", path.stem)
-        if task_id not in task_text:
+        if task_id not in tasks:
             errors.append(f"{path.name}: {task_id} is not listed in TASKS.md")
         status = frontmatter.get("status")
         if status and status not in TASK_STATUSES:
             errors.append(f"{path.name}: invalid status {status}")
+        if task_id in tasks and status and tasks[task_id] != status:
+            errors.append(
+                f"{path.name}: status {status} does not match TASKS.md status {tasks[task_id]}"
+            )
 
         sections = markdown_sections(text)
         for section in REQUIRED_SECTIONS:
             if section not in sections:
                 errors.append(f"{path.name}: missing section {section}")
+            elif not section_body(text, section):
+                errors.append(f"{path.name}: empty section {section}")
+
+        criteria = section_body(text, "Acceptance criteria")
+        boxes = re.findall(r"^\s*-\s+\[([ xX])\]\s+", criteria, flags=re.MULTILINE)
+        if criteria and not boxes:
+            errors.append(f"{path.name}: acceptance criteria need Markdown checkboxes")
+        if status == "done" and any(mark == " " for mark in boxes):
+            errors.append(f"{path.name}: done task has unchecked acceptance criteria")
 
         delivery = git_fields(text)
         for key in REQUIRED_GIT_FIELDS:
@@ -120,7 +166,23 @@ def validate(root: Path) -> dict[str, object]:
             errors.append(f"{path.name}: invalid commit_policy {delivery.get('commit_policy', '')}")
         if delivery.get("push_policy") not in PUSH_POLICIES:
             errors.append(f"{path.name}: invalid push_policy {delivery.get('push_policy', '')}")
+        if status == "done" and delivery.get("end_commit") == "pending":
+            errors.append(f"{path.name}: done task has pending end_commit")
+        work_branch = delivery.get("work_branch")
+        if status == "active" and work_branch and work_branch not in {"none", "pending"}:
+            active_work_branches.setdefault(work_branch, []).append(task_id)
         checked.append(path.relative_to(root).as_posix())
+
+    for work_branch, task_ids in active_work_branches.items():
+        if len(task_ids) > 1:
+            errors.append(
+                f"multiple active tasks share work_branch {work_branch}: "
+                f"{', '.join(task_ids)}"
+            )
+
+    for task_id, status in tasks.items():
+        if status != "planned" and not (handoff_dir / f"{task_id}.md").is_file():
+            errors.append(f"TASKS.md: {task_id} status {status} requires handoffs/{task_id}.md")
 
     return {
         "schema": "conversation-hub/project-contract-v1",

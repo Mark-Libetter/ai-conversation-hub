@@ -5,7 +5,7 @@
 | ID | 任务 | 状态 | Owner | 依赖 | Handoff |
 |---|---|---|---|---|---|
 | T-001 | 整理当前 v0.4.0 工作区，建立项目接力合同并推送开发分支 | done | primary Codex integrator | 无 | [handoffs/T-001.md](handoffs/T-001.md) |
-| T-002 | 审查开发分支并决定是否合并 main、创建 v0.4.0 Release | planned | user | T-001 | 待创建；未授权执行 |
+| T-002 | 审查开发分支、强化项目合同生命周期并发布 v0.4.0 | review | primary Codex integrator | T-001 | [handoffs/T-002.md](handoffs/T-002.md) |
 
 ## 执行纪律
 
