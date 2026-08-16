@@ -30,8 +30,13 @@ management data (favorites, tags, notes, daily metadata) separately in
   overwriting a newer edit.
 - Native navigation is allow-listed. WorkBuddy receives only
   `workbuddy://chat/<validated-id>`. ZCode is started with a verified
-  `ZCode.exe`, fixed `--open-workspace` arguments, and `shell=False`; the Hub
-  never edits protocol registrations.
+  `ZCode.exe`, fixed `--open-workspace` arguments, and `shell=False`. Grok is
+  started from this computer's own CLI (`$GROK_HOME/bin`, `~/.grok/bin`, then
+  PATH) with `--resume <id>`. Hermes and Claude Code use the same pattern with
+  their own `--resume` flags. `hermes://` is not treated as a session jump
+  (desktop only handles blueprint links). Any Grok proxy comes from that
+  computer's `HTTP_PROXY` / `HTTPS_PROXY` or `extra_sources.grok.proxy`; the
+  Hub never assumes a Clash port and never edits protocol registrations.
 
 ## Search boundaries
 

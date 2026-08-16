@@ -6,9 +6,13 @@
     <meta name="color-scheme" content="light dark">
     <title>AI 对话中心 · 对话指挥中心</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-    <link rel="stylesheet" href="/app.css?v=instant1">
+    <link rel="stylesheet" href="/app.css?v=instant36">
   </head>
   <body>
+    <div id="hubOfflineBanner" class="hub-offline-banner" hidden>
+      对话中心暂时连不上。
+      <button id="hubReconnectButton" type="button">重新连接</button>
+    </div>
     <div class="app-frame">
       <aside id="primarySidebar" class="primary-sidebar" aria-label="侧边栏">
         <div class="brand">
@@ -119,6 +123,11 @@
               <option value="qwenworkcn">千问办公</option>
             </select>
             <input id="searchInput" type="search" placeholder="搜索对话，支持 OR / NOT / &quot;短语&quot;">
+            <div class="global-search-nav" hidden>
+              <span id="searchNavState" class="global-search-state" hidden></span>
+              <button id="searchPrev" type="button" title="上一个结果" disabled>↑</button>
+              <button id="searchNext" type="button" title="下一个结果" disabled>↓</button>
+            </div>
             <details class="search-syntax">
               <summary aria-label="搜索语法帮助">语法</summary>
               <div>
@@ -156,6 +165,7 @@
                   <button class="quick-range active" data-range="all" type="button">全部</button>
                 </div>
                 <div class="filter-actions">
+                  <div id="sourceStarters" class="source-starters" hidden></div>
                   <details id="moreFilters" class="more-filters">
                     <summary>筛选</summary>
                     <div class="more-filters-panel">
@@ -382,9 +392,41 @@
 
     <template id="detailTemplate">
       <div class="detail-inner">
+        <aside class="reader-toc" hidden>
+          <div class="reader-toc-bar">
+            <strong class="reader-toc-head">目录</strong>
+            <button class="reader-toc-close" type="button">收起</button>
+          </div>
+          <nav class="reader-toc-list"></nav>
+        </aside>
         <div class="detail-head">
           <div><div class="source-line"></div><h2 class="detail-title"></h2><p class="detail-meta"></p></div>
           <div class="detail-head-actions">
+            <button class="button ghost reader-toc-toggle" type="button" aria-pressed="false">目录</button>
+            <details class="reader-look">
+              <summary>阅读外观</summary>
+              <div class="reader-look-panel">
+                <div class="reader-presets" role="group" aria-label="阅读配色">
+                  <button type="button" data-reader-preset="inherit">跟随皮肤</button>
+                  <button type="button" data-reader-preset="paper">米纸</button>
+                  <button type="button" data-reader-preset="night">夜间</button>
+                  <button type="button" data-reader-preset="sepia">旧书</button>
+                  <button type="button" data-reader-preset="green">护眼</button>
+                  <button type="button" data-reader-preset="contrast">高对比</button>
+                </div>
+                <label class="reader-color">背景<input class="reader-bg" type="color" value="#f6f1e6"></label>
+                <label class="reader-color">文字<input class="reader-ink" type="color" value="#2a241c"></label>
+                <label class="reader-font-field">字体
+                  <select class="reader-font">
+                    <option value="">跟随界面</option>
+                    <option value="Georgia, 'Songti SC', 'SimSun', serif">衬线 · 宋体</option>
+                    <option value="'Segoe UI', 'Microsoft YaHei UI', sans-serif">黑体</option>
+                    <option value="'KaiTi', 'STKaiti', serif">楷体</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+            <button class="button ghost reader-toggle" type="button" aria-pressed="false" title="整页阅读对话">整页阅读</button>
             <button class="favorite-button" type="button" aria-label="收藏"></button>
             <button class="detail-close-button" type="button" aria-label="收起对话内容" title="收起对话内容">×</button>
           </div>
@@ -396,7 +438,9 @@
         </div>
         <p class="launch-note muted"></p>
         <section class="overview-block">
-          <div class="section-heading"><h3>概览</h3></div>
+          <div class="section-heading">
+            <h3>概览</h3>
+          </div>
           <dl class="overview"></dl>
         </section>
         <section class="note-block">
@@ -429,6 +473,7 @@
           </div>
         </section>
         <section class="messages-block">
+          <div class="messages-toolbar">
           <div class="messages-heading"><h3>对话</h3><span class="message-count muted"></span></div>
           <section class="conversation-search-panel" aria-label="在当前对话中搜索">
             <label>
@@ -436,11 +481,11 @@
               <input class="conversation-search-input" type="search"
                 placeholder="在当前对话中搜索…" autocomplete="off">
             </label>
-            <div class="conversation-search-nav">
-              <span class="conversation-search-state">输入关键词</span>
+            <div class="conversation-search-nav" hidden>
+              <span class="conversation-search-state" hidden></span>
               <button class="conversation-search-previous" type="button" title="上一个匹配" disabled>↑</button>
               <button class="conversation-search-next" type="button" title="下一个匹配" disabled>↓</button>
-              <button class="conversation-search-clear" type="button" title="清除搜索" disabled>×</button>
+              <button class="conversation-search-clear" type="button" title="清除搜索">×</button>
             </div>
           </section>
           <div class="message-tools">
@@ -449,16 +494,21 @@
               <button class="segment" data-role="user" type="button">你</button>
               <button class="segment" data-role="assistant" type="button">助手</button>
             </div>
-            <label class="fold-process-toggle">
-              <input class="fold-process-input" type="checkbox">
-              <span>折叠思考 / 过程</span>
-            </label>
+            <div class="segments message-order" role="group" aria-label="消息排序">
+              <button class="segment active" data-order="oldest" type="button">旧到新</button>
+              <button class="segment" data-order="newest" type="button">新到旧</button>
+            </div>
+            <div class="segments message-view-mode" role="group" aria-label="对话完整度">
+              <button class="segment active" data-view="clean" type="button">正文</button>
+              <button class="segment" data-view="full" type="button">完全体</button>
+            </div>
+          </div>
           </div>
           <div class="messages"></div>
         </section>
         <details class="detail-collapsible review-block">
           <summary><span>对话回顾卡</span><span class="review-state muted"></span></summary>
-          <p class="muted">本地提取已完成、决定、未完成、阻塞、提交和文件，保留原文证据。</p>
+
           <div class="continuation-actions">
             <button class="button secondary generate-review" type="button">生成回顾卡</button>
             <button class="button secondary copy-review" type="button" hidden>复制 Markdown</button>
@@ -466,12 +516,12 @@
           </div>
           <div class="review-preview" hidden>
             <textarea class="review-output" rows="12" readonly aria-label="对话回顾卡 Markdown"></textarea>
-            <p class="muted">固定规则、本机生成、不调用模型；历史内容不会被当成新授权。</p>
+
           </div>
         </details>
         <details class="detail-collapsible continuation-block">
           <summary><span>跨 Agent 接续</span><span class="continuation-state muted"></span></summary>
-          <p class="muted">生成可追溯的本地接续包，再粘贴给任意 Agent。</p>
+
           <div class="continuation-actions">
             <button class="button primary generate-continuation" type="button">生成接续包</button>
             <button class="button secondary copy-continuation" type="button" hidden>复制 Markdown</button>
@@ -479,7 +529,7 @@
           </div>
           <div class="continuation-preview" hidden>
             <textarea class="continuation-output" rows="9" readonly aria-label="接续包 Markdown"></textarea>
-            <p class="muted continuation-safety">历史内容不会被当成新授权；中心不会调用云端模型或自动执行。</p>
+
           </div>
           <details class="memory-card">
             <summary>可选本地记忆卡 <span class="muted">默认不附带</span></summary>
@@ -629,6 +679,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=instant1" defer></script>
+    <script src="/app.js?v=instant36" defer></script>
   </body>
 </html>

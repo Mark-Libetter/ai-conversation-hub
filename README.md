@@ -128,7 +128,7 @@ Double-click `launcher.py` or run `python launcher.py` — starts the server and
 The packaged EXE includes an in-process system tray tied to the actual listener port. It can open the Hub, toggle startup, or exit the whole app. The source fallback `start-tray.vbs` uses paths relative to its installation folder.
 
 ### Desktop launch (macOS)
-Double-click `start-macos.command`. The first time, Control-click it and choose **Open** if Gatekeeper warns. The script starts `launcher.py`, enables Grok Build when `~/.grok/sessions` exists, and opens the browser. Grok continuation still copies `grok --resume <id>`; run that in Terminal.
+Double-click `start-macos.command`. The first time, Control-click it and choose **Open** if Gatekeeper warns. The script starts `launcher.py`, enables Grok Build when `~/.grok/sessions` exists, and opens the browser. Grok continuation launches that computer's Grok CLI when it can be found.
 
 ## Built-in data sources
 
@@ -156,10 +156,11 @@ Double-click `start-macos.command`. The first time, Control-click it and choose 
 |---|---|---:|---|
 | **Codex** | `codex://threads/<id>` | Yes | Verified against the installed Codex desktop protocol |
 | **WorkBuddy** | `workbuddy://chat/<id>` | Yes | Uses WorkBuddy's validated task deep-link grammar |
-| **Claude Code** | Copy `claude --resume <id>` | Yes | Copied only; the Hub never executes the command |
-| **Grok Build** | Copy `grok --resume <id>` | Yes | Copied only; the Hub never executes the command |
+| **Claude Code** | Launch this computer's `claude --resume <id>` | Yes, if the session JSONL still exists | `history.jsonl` leftovers without `projects/` or `sessions/` files cannot be resumed |
+| **Grok Build** | Launch this computer's `grok --resume <id>` | Yes | Discovers `$GROK_HOME/bin` or `~/.grok/bin`, then PATH. Uses only this computer's live `HTTP_PROXY` / `HTTPS_PROXY` (or `extra_sources.grok.proxy`). No hardcoded Clash port |
+| **Hermes** | Launch this computer's `hermes --resume <id>` | Yes | Official CLI resume. `hermes://` is only a blueprint deep link, not a session jump |
 | **ZCode** | Launch `ZCode.exe --open-workspace <cwd>` | Workspace | Bypasses a conflicting `zcode://` registration; no session-level protocol is claimed |
-| **Hermes / Cursor / QClaw / Marvis** | Open app | No | No verifiable session-level protocol is claimed |
+| **Cursor / QClaw / Marvis / Qoder** | Open app | No | Their CLIs have no verified session-resume flag; only the client/workspace can be opened |
 | **QoderWork / CodePilot / custom** | Handoff packet / copy ID / export | No | Safe fallback; no guessed private protocol |
 
 **Want to connect another agent?** Supports JSONL / Markdown / SQLite custom formats, no code changes needed — see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -203,6 +204,11 @@ HERMES_HOME=<Hermes dir containing state.db>
 CONVERSATION_HUB_CODEX_DB=<path to state_5.sqlite>
 CODEX_HOME=<Codex home directory>
 WORKBUDDY_HOME=<dir containing workbuddy.db and projects>
+GROK_HOME=<Grok home, default ~/.grok>
+CONVERSATION_HUB_GROK_EXE=<this computer's grok.exe, if not in ~/.grok/bin>
+CONVERSATION_HUB_GROK_PROXY=<optional http://127.0.0.1:PORT on this computer>
+CONVERSATION_HUB_HERMES_EXE=<this computer's hermes CLI>
+CONVERSATION_HUB_CLAUDE_EXE=<this computer's claude CLI>
 ```
 
 ## Agent integration (advanced: let other agents query your conversation archive)

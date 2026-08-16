@@ -20,10 +20,25 @@ from server import (  # noqa: E402
     ConversationIndex,
     build_continuation_packet,
     build_conversation_review,
+    classify_transcript_message,
     continuation_packet_markdown,
     conversation_review_markdown,
+    discover_grok_executable,
+    discover_grok_launcher,
+    grok_launch_env,
+    grok_launch_preflight,
+    launch_grok_cli,
+    launch_new_cli,
+    _windows_cmd_k_line,
     is_internal_noise_message,
+    launch_server_target,
     launch_targets_for,
+    overview_same_line,
+    overview_snippet,
+    resume_descriptor,
+    build_agent_handoff,
+    extract_codex_user_text,
+    iter_codex_visible_messages,
 )
 
 
@@ -53,6 +68,42 @@ class InternalNoiseTests(unittest.TestCase):
         self.assertTrue(is_internal_noise_message("user", "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted into the summary below."))
         self.assertFalse(is_internal_noise_message("assistant", "开始批量修改。先处理 models.py 的 4 处修改："))
         self.assertFalse(is_internal_noise_message("user", "我想说怎么最方便打开grok过去的对话呢"))
+
+    def test_classifies_mid_turn_progress_without_dropping_user_facing(self) -> None:
+        self.assertEqual(
+            classify_transcript_message(
+                "assistant",
+                "35044 已成功杀掉。现在只剩你的 4 个真实窗口。再用正确方式启动可见的 resume 窗口：",
+            ),
+            "progress",
+        )
+        self.assertEqual(
+            classify_transcript_message("assistant", "等几秒确认它是否成功恢复："),
+            "progress",
+        )
+        self.assertEqual(
+            classify_transcript_message("assistant", "达令菁，搞定！先不折腾内存了，跟你说结果——"),
+            "visible",
+        )
+        self.assertEqual(
+            classify_transcript_message("assistant", "开始批量修改。先处理 models.py 的 4 处修改："),
+            "visible",
+        )
+        self.assertEqual(
+            classify_transcript_message("assistant", "内存满了，批量精简+更新一起做："),
+            "system",
+        )
+
+
+class OverviewSnippetTests(unittest.TestCase):
+    def test_takes_first_prose_line_and_skips_tables(self) -> None:
+        text = (
+            "达令菁，搞定了！两个窗口都已经开好了。\n\n"
+            "| # | PID | 内存 |\n|---|---|---|\n| 1 | 44568 | ~87 MB |\n"
+        )
+        self.assertEqual(overview_snippet(text, 80), "达令菁，搞定了！两个窗口都已经开好了。")
+        self.assertTrue(overview_same_line("再帮我开一个窗口", "再帮我开一个窗口冲额度"))
+        self.assertFalse(overview_same_line("再帮我开一个窗口", "做了吧"))
 
 
 class InstantIndexTests(unittest.TestCase):
@@ -104,14 +155,37 @@ class InstantIndexTests(unittest.TestCase):
         self.assertEqual("deep_link", codex["kind"])
         self.assertTrue(codex["href"].startswith("codex://threads/"))
 
-        hermes = launch_targets_for(sample_conversation("hermes"))[0]
-        self.assertFalse(hermes["exact"])
-        self.assertEqual("hermes://", hermes["href"])
+        hermes = launch_targets_for(sample_conversation("hermes"))
+        self.assertEqual("hermes-app", hermes[0]["target_id"])
+        self.assertEqual("client", hermes[0]["capability"])
+        self.assertEqual("app_link", hermes[0]["kind"])
+        self.assertEqual("hermes://", hermes[0]["href"])
+        self.assertFalse(hermes[0]["exact"])
 
-        claude = launch_targets_for(sample_conversation("claude"))[0]
-        self.assertTrue(claude["exact"])
-        self.assertEqual("copy_command", claude["kind"])
-        self.assertEqual("claude --resume session-123456", claude["value"])
+        with tempfile.TemporaryDirectory() as raw:
+            transcript = Path(raw) / "session-123456.jsonl"
+            transcript.write_text("{}\n", encoding="utf-8")
+            claude_item = sample_conversation("claude")
+            claude_item.source_kind = "claude-jsonl"
+            claude_item.rollout_path = str(transcript)
+            claude_exe = Path("/opt/local/claude") if os.name != "nt" else Path(r"C:\Tools\claude.exe")
+            with mock.patch("server.discover_claude_executable", return_value=claude_exe):
+                claude = launch_targets_for(claude_item)
+        self.assertEqual("claude-session", claude[0]["target_id"])
+        self.assertEqual("session", claude[0]["capability"])
+        self.assertEqual("server_launch", claude[0]["kind"])
+        self.assertEqual("claude-new", claude[1]["target_id"])
+
+        meta = sample_conversation("claude")
+        meta.source_kind = "claude-history-metadata-only"
+        meta.rollout_path = str(Path.home() / ".claude" / "history.jsonl")
+        with mock.patch("server.discover_claude_executable", return_value=None), mock.patch(
+            "server.protocol_has_open_command", return_value=False
+        ):
+            claude_meta = launch_targets_for(meta)
+        self.assertEqual("none", claude_meta[0]["capability"])
+        self.assertEqual("claude-no-transcript", claude_meta[0]["target_id"])
+        self.assertIn("无法 --resume", claude_meta[0]["note"])
 
         workbuddy = launch_targets_for(sample_conversation("workbuddy"))[0]
         self.assertTrue(workbuddy["exact"])
@@ -121,21 +195,156 @@ class InstantIndexTests(unittest.TestCase):
         zcode = launch_targets_for(sample_conversation("zcode"))[0]
         self.assertFalse(zcode["exact"])
         self.assertEqual("server_launch", zcode["kind"])
+        self.assertEqual("workspace", zcode["capability"])
         self.assertEqual("zcode-workspace", zcode["target_id"])
         self.assertNotIn("href", zcode)
 
-        grok = launch_targets_for(sample_conversation("grok"))[0]
-        self.assertTrue(grok["exact"])
-        self.assertEqual("copy_command", grok["kind"])
-        self.assertEqual("grok --resume session-123456", grok["value"])
+    def test_agent_handoff_is_compact_and_honest(self) -> None:
+        item = sample_conversation("grok")
+        fake_exe = Path("/opt/local/grok") if os.name != "nt" else Path(r"C:\Tools\grok.exe")
+        with mock.patch("server.discover_grok_executable", return_value=fake_exe):
+            packet = build_agent_handoff(item, {"goal": "打开窗口", "latest_request": "做了吧", "latest_response": "搞定"})
+            grok = launch_targets_for(sample_conversation("grok"))
+            resume = resume_descriptor(item)
+        self.assertEqual("ai-conversation-hub/agent-handoff-v1", packet["schema"])
+        self.assertEqual("session", packet["resume"]["capability"])
+        self.assertTrue(packet["safety"]["historical_untrusted"])
+        self.assertFalse(packet["safety"]["auto_execute"])
+        self.assertFalse(packet["memory_card"]["included"])
+        self.assertEqual("session", resume["capability"])
+        self.assertEqual("grok-session", grok[0]["target_id"])
+        self.assertTrue(grok[0]["exact"])
+        self.assertEqual("server_launch", grok[0]["kind"])
+        self.assertEqual("session", grok[0]["capability"])
+        self.assertEqual("copy_command", grok[1]["kind"])
+        self.assertIn("--resume session-123456", grok[1]["value"])
+        self.assertEqual("grok-new", grok[2]["target_id"])
+        self.assertEqual("client", grok[2]["capability"])
+        self.assertFalse(grok[2]["exact"])
+
+        with mock.patch("server.discover_grok_executable", return_value=None), mock.patch(
+            "server.discover_grok_launcher", return_value=None
+        ):
+            missing = launch_targets_for(sample_conversation("grok"))
+        self.assertEqual(1, len(missing))
+        self.assertEqual("copy_command", missing[0]["kind"])
+        self.assertEqual("grok --resume session-123456", missing[0]["value"])
+
+    def test_grok_launch_uses_this_machine_cli_and_its_own_proxy(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            exe = Path(raw) / ("grok.exe" if os.name == "nt" else "grok")
+            exe.write_bytes(b"")
+            with mock.patch.dict(os.environ, {"CONVERSATION_HUB_GROK_EXE": str(exe)}, clear=False):
+                found = discover_grok_executable()
+            self.assertEqual(found, exe.resolve())
+
+            dead = "http://127.0.0.1:65530"
+            their_proxy = "http://127.0.0.1:18888"
+            with mock.patch("server._tcp_open", return_value=False):
+                stripped = grok_launch_env({"HTTPS_PROXY": dead, "PATH": "/old/grok"})
+            self.assertNotIn("HTTPS_PROXY", stripped)
+
+            with mock.patch("server._tcp_open", side_effect=lambda host, port, timeout=0.2: port == 18888):
+                kept = grok_launch_env({"HTTPS_PROXY": their_proxy})
+                configured = grok_launch_env({}, config={"proxy": their_proxy})
+            self.assertEqual(kept["HTTPS_PROXY"], their_proxy)
+            self.assertEqual(configured["HTTP_PROXY"], their_proxy)
+
+            item = sample_conversation("grok")
+            fake = mock.Mock(pid=4242)
+            with mock.patch("server.discover_grok_shortcut", return_value=None), mock.patch(
+                "server.discover_grok_launcher", return_value=None
+            ), mock.patch("server.discover_grok_executable", return_value=exe.resolve()), mock.patch(
+                "server._popen_detached", return_value=fake
+            ) as popen, mock.patch("server.grok_launch_env", return_value={"HTTPS_PROXY": their_proxy}), mock.patch(
+                "server.grok_launch_preflight", return_value=""
+            ):
+                result = launch_server_target(item, "grok-session")
+            self.assertEqual(4242, result["pid"])
+            self.assertTrue(result["exact"])
+            command = popen.call_args.args[0]
+            self.assertEqual(command[0], str(exe.resolve()))
+            self.assertEqual(command[1:], ["--resume", "session-123456"])
+            self.assertEqual(popen.call_args.kwargs["env"]["HTTPS_PROXY"], their_proxy)
+            self.assertIn(str(exe.parent), popen.call_args.kwargs["env"]["PATH"])
+
+            socks = {"HTTP_PROXY": their_proxy, "ALL_PROXY": "socks5://127.0.0.1:18888"}
+            with mock.patch("server._tcp_open", side_effect=lambda host, port, timeout=0.2: port == 18888):
+                cleaned = grok_launch_env(socks)
+            self.assertEqual(cleaned["ALL_PROXY"], "socks5://127.0.0.1:18888")
+            self.assertEqual(cleaned["HTTP_PROXY"], their_proxy)
+
+            with mock.patch("server._tcp_open", return_value=False):
+                self.assertIn("没在听", grok_launch_preflight({"HTTPS_PROXY": dead}))
+            with mock.patch("server._tcp_open", return_value=True):
+                self.assertEqual("", grok_launch_preflight({"HTTPS_PROXY": their_proxy}))
+
+            with mock.patch("server.discover_grok_shortcut", return_value=None), mock.patch(
+                "server.discover_grok_launcher", return_value=None
+            ), mock.patch("server.discover_grok_executable", return_value=exe.resolve()), mock.patch(
+                "server._popen_detached", return_value=fake
+            ) as new_popen, mock.patch("server.grok_launch_env", return_value={"HTTPS_PROXY": their_proxy}), mock.patch(
+                "server.grok_launch_preflight", return_value=""
+            ):
+                opened = launch_new_cli("grok")
+            self.assertFalse(opened["exact"])
+            self.assertEqual([str(exe.resolve())], new_popen.call_args.args[0])
+
+            launcher = Path(raw) / "launch-grok-build.cmd"
+            launcher.write_text("@echo off\n", encoding="ascii")
+            with mock.patch.dict(os.environ, {"CONVERSATION_HUB_GROK_LAUNCHER": str(launcher)}, clear=False):
+                self.assertEqual(discover_grok_launcher(), launcher.resolve())
+            with mock.patch("server.discover_grok_launcher", return_value=launcher.resolve()), mock.patch(
+                "server.grok_launch_preflight", return_value=""
+            ), mock.patch("server._windows_explorer_start", return_value=fake) as started:
+                launch_grok_cli(extra_args=["--resume", "session-123456"], cwd=raw)
+            started.assert_called_once()
+            self.assertEqual(started.call_args.args[0], launcher.resolve())
+            self.assertEqual(started.call_args.args[1], ["--resume", "session-123456"])
+
+    def test_hermes_and_claude_open_the_registered_client(self) -> None:
+        item = sample_conversation("hermes")
+        with mock.patch("server.protocol_has_open_command", return_value=True), mock.patch(
+            "server._windows_shell_open"
+        ) as opener:
+            result = launch_server_target(item, "hermes-app")
+        self.assertFalse(result["exact"])
+        self.assertEqual("hermes-app", result["target_id"])
+        opener.assert_called_once_with("hermes://")
+
+        with mock.patch("server.protocol_has_open_command", return_value=False):
+            with self.assertRaises(ValueError):
+                launch_server_target(sample_conversation("claude"), "claude-app")
+
+    def test_windows_console_keeps_window_and_can_pass_proxy(self) -> None:
+        line = _windows_cmd_k_line(
+            [r"C:\Tools\claude.exe", "--resume", "session-123456"],
+            {"HTTPS_PROXY": "http://127.0.0.1:18888"},
+        )
+        self.assertIn("claude.exe", line)
+        self.assertIn("--resume session-123456", line)
+        self.assertIn('set "HTTPS_PROXY=http://127.0.0.1:18888"', line)
+        self.assertNotIn("18888 &", line)
+        with mock.patch.dict(os.environ, {"ALL_PROXY": "socks5://127.0.0.1:9"}, clear=False):
+            leftover = _windows_cmd_k_line(
+                [r"C:\Tools\grok.exe"],
+                {"HTTPS_PROXY": "http://127.0.0.1:18888"},
+            )
+        self.assertIn('set "ALL_PROXY="', leftover)
 
     def test_unsafe_session_id_never_becomes_a_command(self) -> None:
         item = sample_conversation("claude", "bad id; remove-item")
-        self.assertEqual([], launch_targets_for(item))
+        with mock.patch("server.discover_claude_executable", return_value=None):
+            targets = launch_targets_for(item)
+        self.assertFalse(any("--resume" in str(row.get("value") or "") for row in targets))
+        self.assertFalse(any("bad id" in str(row.get("value") or "") for row in targets))
 
     def test_unsafe_workbuddy_id_never_becomes_a_deep_link(self) -> None:
         item = sample_conversation("workbuddy", "bad id?next=evil")
-        self.assertEqual([], launch_targets_for(item))
+        with mock.patch("server.protocol_has_open_command", return_value=True):
+            targets = launch_targets_for(item)
+        self.assertTrue(all("bad id" not in str(row.get("href") or "") for row in targets))
+        self.assertFalse(any(row.get("kind") == "deep_link" for row in targets))
 
     def test_continuation_packet_is_traceable_and_content_deterministic(self) -> None:
         item = sample_conversation("workbuddy")
@@ -303,6 +512,171 @@ class AdapterRegistryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(1, source_adapters.estimate_conversations("claude", root))
+
+    def test_readable_turn_unifies_qoderwork_parts_and_system_reminders(self) -> None:
+        from readable import readable_turn_text
+
+        parts = [
+            {"type": "tool-Thinking", "input": {"text": "internal plan"}},
+            {"type": "tool-Bash", "input": {"command": "ls"}},
+            {"type": "text", "text": "收到，两件事已经记下。"},
+        ]
+        text = readable_turn_text("assistant", parts)
+        self.assertIn("收到，两件事已经记下。", text)
+        self.assertIn("<thinking>", text)
+        self.assertIn("internal plan", text)
+        self.assertNotIn("tool-Bash", text)
+        reminder = readable_turn_text("user", "<system-reminder>\nTimezone: Asia/Shanghai\n</system-reminder>")
+        self.assertEqual("", reminder)
+
+    def test_codex_hides_agents_md_and_keeps_assistant_from_event_msg(self) -> None:
+        self.assertEqual("", extract_codex_user_text("# AGENTS.md instructions\n<INSTRUCTIONS>\nhi"))
+        self.assertEqual("继续吧", extract_codex_user_text("<user_query>继续吧</user_query>"))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            rows = [
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-08-05T02:00:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "# AGENTS.md instructions\nfoo"}],
+                    },
+                },
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-08-05T02:00:01Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "<user_query>找一下这个对话id</user_query>"}],
+                    },
+                },
+                {
+                    "type": "event_msg",
+                    "timestamp": "2026-08-05T02:00:02Z",
+                    "payload": {"type": "agent_message", "message": "找到了，会话还在。"},
+                },
+            ]
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            messages = iter_codex_visible_messages(path)
+        self.assertEqual(
+            [("user", "找一下这个对话id"), ("assistant", "找到了，会话还在。")],
+            [(item["role"], item["text"]) for item in messages],
+        )
+
+    def test_codepilot_keeps_assistant_text_and_drops_thinking_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "codepilot.db"
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    "CREATE TABLE chat_sessions(id TEXT, title TEXT, updated_at REAL, "
+                    "created_at REAL, sdk_cwd TEXT, working_directory TEXT, model TEXT)"
+                )
+                conn.execute(
+                    "CREATE TABLE messages(id INTEGER, session_id TEXT, role TEXT, "
+                    "content TEXT, created_at REAL, is_heartbeat_ack INTEGER)"
+                )
+                conn.execute(
+                    "INSERT INTO chat_sessions VALUES('one','印象笔记',2,1,'C:/fixture','', '')"
+                )
+                payload = json.dumps(
+                    [
+                        {"type": "thinking", "thinking": "internal monologue"},
+                        {"type": "tool_use", "name": "ls", "input": {}},
+                        {"type": "text", "text": "现在正常了。连接稳定。"},
+                    ],
+                    ensure_ascii=False,
+                )
+                conn.execute(
+                    "INSERT INTO messages VALUES(1,'one','user','检查模型',1,0)"
+                )
+                conn.execute(
+                    "INSERT INTO messages VALUES(2,'one','assistant',?,2,0)",
+                    (payload,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            items, messages = source_adapters._load_codepilot(path)
+            self.assertEqual(1, len(items))
+            turns = messages["one"]
+            self.assertEqual("user", turns[0]["role"])
+            self.assertIn("现在正常了。连接稳定。", turns[1]["text"])
+            self.assertIn("<thinking>", turns[1]["text"])
+            self.assertIn("internal monologue", turns[1]["text"])
+            self.assertNotIn("tool_use", turns[1]["text"])
+
+    def test_codex_search_refresh_counts_visible_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            rows = [
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-08-05T02:00:00Z",
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "<user_query>找一下这个对话id</user_query>"}],
+                    },
+                },
+                {
+                    "type": "event_msg",
+                    "timestamp": "2026-08-05T02:00:02Z",
+                    "payload": {"type": "agent_message", "message": "找到了，会话还在。"},
+                },
+            ]
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            item = sample_conversation("codex", "codex-count-1")
+            item.rollout_path = str(path)
+            item.message_count = 0
+            index = ConversationIndex(refresh_on_init=False)
+            index._refresh_codex_search([item])
+            self.assertEqual(2, item.message_count)
+
+            again = sample_conversation("codex", "codex-count-1")
+            again.rollout_path = str(path)
+            again.message_count = 0
+            index._refresh_codex_search([again])
+            self.assertEqual(2, again.message_count)
+
+    def test_marvis_keeps_assistant_text_and_drops_thinking_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "marvis.db"
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    "CREATE TABLE conversations("
+                    "conversation_id TEXT, title TEXT, updated_at REAL, created_at REAL, metadata TEXT)"
+                )
+                conn.execute(
+                    "CREATE TABLE messages("
+                    "conversation_id TEXT, role TEXT, content TEXT, created_at REAL, message_seq INTEGER)"
+                )
+                conn.execute(
+                    "INSERT INTO conversations VALUES('one','检查模型',2,1,'{\"cwd\":\"C:/fixture\"}')"
+                )
+                payload = json.dumps(
+                    [
+                        {"type": "thinking", "thinking": "internal monologue"},
+                        {"type": "text", "text": "连接稳定。"},
+                    ],
+                    ensure_ascii=False,
+                )
+                conn.execute("INSERT INTO messages VALUES('one','user','检查模型',1,1)")
+                conn.execute("INSERT INTO messages VALUES('one','assistant',?,2,2)", (payload,))
+                conn.commit()
+            finally:
+                conn.close()
+            items, messages = source_adapters._load_marvis(path)
+            self.assertEqual(1, len(items))
+            turns = messages["one"]
+            self.assertEqual("user", turns[0]["role"])
+            self.assertIn("连接稳定。", turns[1]["text"])
+            self.assertIn("<thinking>", turns[1]["text"])
+            self.assertNotIn("tool_use", turns[1]["text"])
 
     def test_codepilot_estimate_is_an_integer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

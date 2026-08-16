@@ -127,7 +127,7 @@ python3 server.py       # macOS / Linux
 正式 EXE 内置系统托盘并使用实际监听端口；托盘可打开中心、切换开机启动，或退出整个中心。源码兼容入口 `start-tray.vbs` 使用相对安装路径，不再绑定某台电脑的绝对路径。
 
 ### 桌面启动（macOS）
-双击 `start-macos.command`。若 Gatekeeper 拦截，请 Control-点击该文件，选「打开」。脚本会启动当前 `launcher.py`，在发现 `~/.grok/sessions` 时启用 Grok Build，并打开浏览器。续接仍是复制 `grok --resume <会话ID>`，在「终端」里粘贴运行。
+双击 `start-macos.command`。若 Gatekeeper 拦截，请 Control-点击该文件，选「打开」。脚本会启动当前 `launcher.py`，在发现 `~/.grok/sessions` 时启用 Grok Build，并打开浏览器。续接会启动**这台电脑自己的** Grok CLI（能找到的话）。
 
 ## 内置数据源
 
@@ -155,10 +155,11 @@ python3 server.py       # macOS / Linux
 |---|---|---:|---|
 | **Codex** | `codex://threads/<id>` | ✅ | 已按本机 Codex 桌面协议验证 |
 | **WorkBuddy** | `workbuddy://chat/<id>` | ✅ | 使用已验证的 WorkBuddy 任务深链格式 |
-| **Claude Code** | 复制 `claude --resume <id>` | ✅ | 只复制、不自动执行命令 |
-| **Grok Build** | 复制 `grok --resume <id>` | ✅ | 只复制、不自动执行命令 |
+| **Claude Code** | 启动这台电脑上的 `claude --resume <id>` | 有会话正文文件才行 | 只有 `history.jsonl`、没有 `projects/` 或 `sessions/` 文件的条目无法 resume |
+| **Grok Build** | 启动这台电脑上的 `grok --resume <id>` | ✅ | 先找 `$GROK_HOME/bin` 或 `~/.grok/bin`，再找 PATH。代理只用这台电脑自己的 `HTTP_PROXY` / `HTTPS_PROXY`（或 `extra_sources.grok.proxy`），不写死 Clash 端口 |
+| **Hermes** | 启动这台电脑上的 `hermes --resume <id>` | ✅ | 官方 CLI 续接。`hermes://` 只用于 blueprint，不能跳到会话 |
 | **ZCode** | 启动 `ZCode.exe --open-workspace <cwd>` | 工作区级 | 绕过冲突的 `zcode://` 注册；不宣称能精确到会话 |
-| **Hermes / Cursor / QClaw / Marvis** | 打开客户端 | — | 未发现可验证的会话级协议，因此不宣称精确定位 |
+| **Cursor / QClaw / Marvis / Qoder** | 打开客户端 | — | CLI 没有已验证的会话恢复参数，只能打开客户端或工作区 |
 | **QoderWork / CodePilot / 自定义源** | 接续包 / 复制 ID / 导出 | — | 保留安全回退，不猜测私有协议 |
 
 **想接入其它 agent？** 支持 JSONL / Markdown / SQLite 三种自定义格式，无需改代码，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
@@ -203,6 +204,11 @@ HERMES_HOME=<包含 state.db 的 Hermes 目录>
 CONVERSATION_HUB_CODEX_DB=<state_5.sqlite 路径>
 CODEX_HOME=<Codex 主目录>
 WORKBUDDY_HOME=<包含 workbuddy.db 与 projects 的目录>
+GROK_HOME=<Grok 主目录，默认 ~/.grok>
+CONVERSATION_HUB_GROK_EXE=<这台电脑的 grok.exe，不在 ~/.grok/bin 时再填>
+CONVERSATION_HUB_GROK_PROXY=<可选，这台电脑的 http://127.0.0.1:端口>
+CONVERSATION_HUB_HERMES_EXE=<这台电脑的 hermes>
+CONVERSATION_HUB_CLAUDE_EXE=<这台电脑的 claude>
 ```
 
 ## Agent 接入（进阶：让其它 agent 用上你的对话资产）

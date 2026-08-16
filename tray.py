@@ -49,6 +49,7 @@ WM_RBUTTONUP = 0x0205
 WM_TIMER = 0x0113
 WM_DESTROY = 0x0002
 TIMER_OPEN = 1
+TIMER_WATCHDOG = 2
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
 NIF_MESSAGE, NIF_ICON, NIF_TIP = 1, 2, 4
 TPM_RIGHTALIGN, TPM_RETURNCMD, TPM_NONOTIFY = 0x0008, 0x0100, 0x0040
@@ -218,6 +219,10 @@ class Tray:
             user32.KillTimer(self.hwnd, TIMER_OPEN)
             self.open_center()
             return 0
+        if msg == WM_TIMER and wparam == TIMER_WATCHDOG:
+            if not health_url(self.url):
+                self.url = ensure_server(self.url)
+            return 0
         if msg == WM_DESTROY:
             user32.PostQuitMessage(0)
             return 0
@@ -277,6 +282,7 @@ class Tray:
         self.nid.hIcon = self.icon or user32.LoadIconW(None, IDI_APPLICATION)
         self.nid.szTip = "AI 对话中心 · 单击打开"
         shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
+        user32.SetTimer(self.hwnd, TIMER_WATCHDOG, 15000, None)
 
         try:
             msg = wt.MSG()

@@ -26,6 +26,17 @@ const SOURCE_DETAILS_KEY = "conversation-hub-source-details-open";
 const SOURCE_ORDER_KEY = "conversation-hub-source-order";
 const SIDEBAR_COLLAPSED_KEY = "conversation-hub-sidebar-collapsed";
 const THEME_KEY = "ai-hub-theme";
+const READER_THEME_KEY = "conversation-hub-reader-theme";
+const READER_TOC_KEY = "conversation-hub-reader-toc";
+const MESSAGE_ORDER_KEY = "conversation-hub-message-order";
+const READER_PRESETS = {
+  inherit: { name: "跟随皮肤", bg: "", ink: "", font: "" },
+  paper: { name: "米纸", bg: "#f6f1e6", ink: "#2a241c", font: "Georgia, 'Songti SC', 'SimSun', serif" },
+  night: { name: "夜间", bg: "#16181d", ink: "#d8dde6", font: "'Segoe UI', 'Microsoft YaHei UI', sans-serif" },
+  sepia: { name: "旧书", bg: "#ead7b4", ink: "#3d2a16", font: "Georgia, 'Songti SC', 'SimSun', serif" },
+  green: { name: "护眼", bg: "#e4eed6", ink: "#243022", font: "'Segoe UI', 'Microsoft YaHei UI', sans-serif" },
+  contrast: { name: "高对比", bg: "#ffffff", ink: "#111111", font: "'Segoe UI', 'Microsoft YaHei UI', sans-serif" },
+};
 const THEMES = {
   "dream-glass": { name: "梦境流光", mode: "dark" },
   "violet-night": { name: "紫夜星云", mode: "dark" },
@@ -187,6 +198,7 @@ const state = {
   total: 0,
   selected: null,
   token: "",
+  launchers: [],
   items: [],
   queryTerms: [],
   summary: null,
@@ -301,6 +313,146 @@ function setDetailWidth(value, { persist = false } = {}) {
   return width;
 }
 
+function readerLookState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(READER_THEME_KEY) || "null");
+    if (raw && typeof raw === "object") return raw;
+  } catch {
+    // localStorage may be blocked
+  }
+  return { preset: "inherit", bg: "#f6f1e6", ink: "#2a241c", font: "" };
+}
+
+function saveReaderLook(look) {
+  try { localStorage.setItem(READER_THEME_KEY, JSON.stringify(look)); } catch {
+    // Appearance still applies for this session.
+  }
+}
+
+function applyReaderLook(look = readerLookState()) {
+  const preset = READER_PRESETS[look.preset] || READER_PRESETS.inherit;
+  const bg = look.preset === "custom" ? look.bg : (preset.bg || look.bg);
+  const ink = look.preset === "custom" ? look.ink : (preset.ink || look.ink);
+  const font = look.font || preset.font || "";
+  const root = document.documentElement;
+  if (look.preset === "inherit" || !bg || !ink) {
+    root.style.removeProperty("--reader-bg");
+    root.style.removeProperty("--reader-ink");
+  } else {
+    root.style.setProperty("--reader-bg", bg);
+    root.style.setProperty("--reader-ink", ink);
+  }
+  if (font) root.style.setProperty("--reader-font", font);
+  else root.style.removeProperty("--reader-font");
+  root.dataset.readerLook = look.preset || "inherit";
+  document.querySelectorAll("[data-reader-preset]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.readerPreset === look.preset);
+  });
+  const bgInput = document.querySelector(".reader-bg");
+  const inkInput = document.querySelector(".reader-ink");
+  const fontInput = document.querySelector(".reader-font");
+  if (bgInput && (bg || look.bg)) bgInput.value = bg || look.bg || "#f6f1e6";
+  if (inkInput && (ink || look.ink)) inkInput.value = ink || look.ink || "#2a241c";
+  if (fontInput) fontInput.value = look.font || preset.font || "";
+}
+
+let readerOpenHook = null;
+let readerJumpHandler = null;
+
+function readerTocTip() {
+  let tip = document.getElementById("readerTocTip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "readerTocTip";
+    tip.className = "reader-toc-tip";
+    tip.hidden = true;
+    document.body.append(tip);
+  }
+  return tip;
+}
+
+function hideReaderTocTip() {
+  const tip = document.getElementById("readerTocTip");
+  if (tip) tip.hidden = true;
+}
+
+function showReaderTocTip(anchor, text) {
+  const value = String(text || "").trim();
+  if (!value) {
+    hideReaderTocTip();
+    return;
+  }
+  const tip = readerTocTip();
+  tip.textContent = value;
+  tip.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 24);
+  let left = rect.right + 10;
+  if (left + width > window.innerWidth - 12) left = Math.max(12, rect.left - width - 10);
+  let top = rect.top;
+  const height = Math.min(tip.scrollHeight + 8, 220);
+  if (top + height > window.innerHeight - 12) top = Math.max(12, window.innerHeight - height - 12);
+  tip.style.width = `${width}px`;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function readerTocOpen() {
+  try { return localStorage.getItem(READER_TOC_KEY) !== "0"; } catch { return true; }
+}
+
+function messageOrderPreference() {
+  try { return localStorage.getItem(MESSAGE_ORDER_KEY) === "newest" ? "newest" : "oldest"; } catch { return "oldest"; }
+}
+
+function placeReaderToc() {
+  const toc = document.querySelector(".reader-toc");
+  if (!toc) return;
+  if (document.body.classList.contains("reader-open")) {
+    document.body.append(toc);
+    return;
+  }
+  const host = document.querySelector(".detail-inner");
+  if (host && toc.parentElement !== host) host.prepend(toc);
+}
+
+function setReaderTocOpen(open) {
+  const on = Boolean(open) && document.body.classList.contains("reader-open");
+  document.body.classList.toggle("reader-toc-open", on);
+  placeReaderToc();
+  const toc = document.querySelector(".reader-toc");
+  if (toc) toc.hidden = !document.body.classList.contains("reader-open");
+  document.querySelectorAll(".reader-toc-toggle").forEach((button) => {
+    button.setAttribute("aria-pressed", String(on));
+    const count = button.dataset.count;
+    button.textContent = on ? "收起目录" : (count ? `目录 · ${count}` : "目录");
+  });
+  try { localStorage.setItem(READER_TOC_KEY, on ? "1" : "0"); } catch { /* optional */ }
+  if (!on) hideReaderTocTip();
+}
+
+function setReaderOpen(open) {
+  const allowed = Boolean(open) && $(".find-layout")?.classList.contains("detail-open");
+  document.body.classList.toggle("reader-open", allowed);
+  document.querySelectorAll(".reader-toggle").forEach((button) => {
+    button.setAttribute("aria-pressed", String(allowed));
+    button.textContent = allowed ? "退出整页" : "整页阅读";
+    button.title = allowed ? "回到侧栏阅读" : "整页阅读对话";
+  });
+  if (!allowed) {
+    hideReaderTocTip();
+    document.body.classList.remove("reader-toc-open");
+    placeReaderToc();
+    const parked = document.querySelector(".reader-toc");
+    if (parked) parked.hidden = true;
+  }
+  if (allowed) {
+    applyReaderLook();
+    setReaderTocOpen(readerTocOpen());
+    readerOpenHook?.();
+  }
+}
+
 function setDetailOpen(open, { focusToggle = false } = {}) {
   const layout = $(".find-layout");
   const toggle = $("#detailToggleButton");
@@ -310,6 +462,7 @@ function setDetailOpen(open, { focusToggle = false } = {}) {
   detailPane.setAttribute("aria-hidden", String(!expanded));
   toggle.setAttribute("aria-expanded", String(expanded));
   toggle.textContent = expanded ? "收起对话内容" : "打开对话内容";
+  if (!expanded) setReaderOpen(false);
   if (focusToggle) toggle.focus({ preventScroll: true });
 }
 
@@ -357,13 +510,12 @@ function initDetailResizer() {
     previewWidth = Math.round(
       Math.max(dragBounds.min, Math.min(dragBounds.max, requested)) / 4
     ) * 4;
-    handle.style.transform = `translate3d(${startWidth - previewWidth}px,0,0)`;
+    document.documentElement.style.setProperty("--detail", `${previewWidth}px`);
     handle.setAttribute("aria-valuenow", String(previewWidth));
   });
   const finish = (event) => {
     if (!handle.hasPointerCapture(event.pointerId)) return;
     handle.releasePointerCapture(event.pointerId);
-    handle.style.transform = "";
     document.body.classList.remove("resizing-detail");
     setDetailWidth(previewWidth, { persist: true });
   };
@@ -483,12 +635,17 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const FOLD_PROCESS_KEY = "conversation-hub-fold-process";
 const THINKING_TAG_RE = /<(thinking|think|thought|reasoning|redacted_thinking)>([\s\S]*?)<\/\1>/gi;
 const SYSTEM_TAG_RE = /<system-reminder>([\s\S]*?)<\/system-reminder>/gi;
 const USER_QUERY_RE = /<user_query>([\s\S]*?)<\/user_query>/gi;
 const LONG_FENCE_RE = /```[^\n]*\n([\s\S]*?)```/g;
 const PROCESS_PARA_RE = /^(?:the user\b|i(?:'m|'ll| am| will| need| should| can| think| see| have| want to)\b|let me\b|looking at\b|this (?:is|looks|seems)\b|we (?:need|should|can)\b|okay[,.]|alright[,.]|based on\b|from the (?:code|file|output|diff)\b|i'll\b|the count is\b|wait[,.]|hmm[,.]|我(?:需要|先|来|会|将|觉得|看)|让我|接下来我|首先(?:，|,)|根据.{0,16}(?:代码|文件|输出|结果))/i;
+
+const PROGRESS_MARKERS = [
+  "已成功杀掉", "没杀掉", "先杀进程", "等几秒", "换姿势", "换正确姿势",
+  "换个更稳", "换终极", "启动命令已执行", "脚本写好了", "重新测试",
+  "用管道喂", "先确认桌面路径", "开工！", "BOM 加上了", "路径短名没变化",
+];
 
 function isInternalNoiseMessage(message) {
   const text = String(message?.text || "").trim();
@@ -514,12 +671,35 @@ function isInternalNoiseMessage(message) {
   return text.length < 140 && (text.includes("匹配到了两条") || text.includes("也有歧义") || text.includes("唯一匹配的压缩替换"));
 }
 
-function foldProcessEnabled() {
-  return localStorage.getItem(FOLD_PROCESS_KEY) !== "0";
+function isProgressMonologue(message) {
+  const text = String(message?.text || "").trim();
+  if (String(message?.role || "") !== "assistant" || !text || text.length > 280) return false;
+  if (text.includes("达令菁") || text.includes("🎉") || text.includes("\n##")) return false;
+  if (PROGRESS_MARKERS.some((marker) => text.includes(marker))) return true;
+  return /[：:]$/.test(text) && /验证|杀掉|启动|进程|窗口|脚本|测试|换/.test(text);
 }
 
-function setFoldProcessEnabled(on) {
-  localStorage.setItem(FOLD_PROCESS_KEY, on ? "1" : "0");
+function messageVisibility(message) {
+  if (message?.visibility === "visible" || message?.visibility === "system" || message?.visibility === "progress") {
+    return message.visibility;
+  }
+  if (isInternalNoiseMessage(message)) return "system";
+  if (isProgressMonologue(message)) return "progress";
+  return "visible";
+}
+
+function messageRoleLabel(message) {
+  const visibility = messageVisibility(message);
+  if (visibility === "system") return "系统记账";
+  if (visibility === "progress") return "过程独白";
+  return message.role === "user" ? "你" : "助手";
+}
+
+function messageTurnKey(message) {
+  const ts = String(Number(message.timestamp || 0)).replace(".", "_");
+  const role = String(message.role || "x");
+  const size = String(message.text || "").length;
+  return `${role}-${ts}-${size}`;
 }
 
 function splitMessageBody(text, role) {
@@ -568,6 +748,228 @@ function clampText(text, limit = 220) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   if (value.length <= limit) return { short: value, rest: "" };
   return { short: value.slice(0, limit).trimEnd() + "…", rest: String(text || "").trim() };
+}
+
+function isMarkdownTableSeparator(line) {
+  return /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(String(line || ""));
+}
+
+function isMarkdownTableRow(line) {
+  const text = String(line || "").trim();
+  if (!text.includes("|")) return false;
+  return text.split("|").filter((cell) => cell.trim() !== "").length >= 2;
+}
+
+function splitMarkdownTableRow(line) {
+  let text = String(line || "").trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+
+function splitFlattenedTableLine(line) {
+  if (String(line || "").split("|").length < 6) return line;
+  const start = line.indexOf("|");
+  if (start < 0) return line;
+  const prefix = line.slice(0, start).trimEnd();
+  const pipeChunk = line.slice(start).trim();
+  const rows = pipeChunk.split(/\|\s+(?=\|)/).map((row) => {
+    let text = row.trim();
+    if (!text.startsWith("|")) text = `|${text}`;
+    if (!text.endsWith("|")) text = `${text}|`;
+    return text;
+  });
+  if (rows.length < 3 || !rows.some(isMarkdownTableSeparator)) return line;
+  return [prefix, rows.join("\n")].filter(Boolean).join("\n\n");
+}
+
+function restorePipeTables(text) {
+  return String(text || "").replace(/\r\n/g, "\n").split(/(```[\s\S]*?```)/g).map((chunk) => {
+    if (chunk.startsWith("```")) return chunk;
+    return chunk.split("\n").map(splitFlattenedTableLine).join("\n");
+  }).join("");
+}
+
+function parseMarkdownTable(lines, start) {
+  if (!isMarkdownTableRow(lines[start]) || !isMarkdownTableSeparator(lines[start + 1] || "")) return null;
+  const header = splitMarkdownTableRow(lines[start]);
+  if (header.length < 2) return null;
+  const rows = [];
+  let index = start + 2;
+  while (index < lines.length && isMarkdownTableRow(lines[index]) && !isMarkdownTableSeparator(lines[index])) {
+    const cells = splitMarkdownTableRow(lines[index]);
+    while (cells.length < header.length) cells.push("");
+    rows.push(cells.slice(0, Math.max(header.length, cells.length)));
+    index += 1;
+  }
+  if (!rows.length) return null;
+  return { header, rows, end: index };
+}
+
+function inlineMarkdown(text, query) {
+  const slots = [];
+  const slot = (html) => {
+    slots.push(html);
+    return `\u0002${slots.length - 1}\u0003`;
+  };
+  let source = String(text ?? "");
+  source = source.replace(/`{1,2}([^`]+)`{1,2}/g, (_, code) => slot(`<code>${highlightHtml(code, query)}</code>`));
+  source = source.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_, label, href) => (
+    slot(`<a class="md-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${highlightHtml(label, query)}</a>`)
+  ));
+  source = source.replace(/~~([^~]+)~~/g, (_, body) => slot(`<del>${highlightHtml(body, query)}</del>`));
+  source = source.replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, starred, underscored) => (
+    slot(`<strong>${highlightHtml(starred || underscored, query)}</strong>`)
+  ));
+  source = source.replace(/\bhttps?:\/\/[^\s)<]+/g, (url) => {
+    const clean = url.replace(/[.,;:!?，。；：！？]+$/, "");
+    return slot(`<a class="md-link" href="${escapeHtml(clean)}" target="_blank" rel="noopener noreferrer">${highlightHtml(clean, query)}</a>`) + url.slice(clean.length);
+  });
+  return highlightHtml(source, query).replace(/\u0002(\d+)\u0003/g, (_, index) => slots[Number(index)] || "");
+}
+
+function renderRichText(text, query = "") {
+  const restored = restorePipeTables(text);
+  const lines = restored.split("\n");
+  const blocks = [];
+  const paragraph = [];
+  let index = 0;
+
+  const flushParagraph = () => {
+    const body = paragraph.join(" ").replace(/\s+/g, " ").trim();
+    paragraph.length = 0;
+    if (body) blocks.push(`<p class="md-p">${inlineMarkdown(body, query)}</p>`);
+  };
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      flushParagraph();
+      const fence = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        fence.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push(`<pre class="md-pre"><code>${highlightHtml(fence.join("\n"), query)}</code></pre>`);
+      continue;
+    }
+    const table = parseMarkdownTable(lines, index);
+    if (table) {
+      flushParagraph();
+      const head = table.header.map((cell) => `<th>${inlineMarkdown(cell, query)}</th>`).join("");
+      const body = table.rows.map((row) => {
+        const cells = table.header.map((_, cellIndex) => `<td>${inlineMarkdown(row[cellIndex] || "", query)}</td>`);
+        return `<tr>${cells.join("")}</tr>`;
+      }).join("");
+      blocks.push(`<div class="md-table-wrap"><table class="md-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
+      index = table.end;
+      continue;
+    }
+    if (!trimmed) {
+      flushParagraph();
+      index += 1;
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      const level = heading[1].length;
+      blocks.push(`<h${level + 2} class="md-h md-h${level}">${inlineMarkdown(heading[2], query)}</h${level + 2}>`);
+      index += 1;
+      continue;
+    }
+    if (/^(?:-{3,}|\*{3,})$/.test(trimmed)) {
+      flushParagraph();
+      blocks.push('<hr class="md-hr">');
+      index += 1;
+      continue;
+    }
+    if (/^>\s?/.test(trimmed)) {
+      flushParagraph();
+      const quotes = [];
+      while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+        quotes.push(lines[index].replace(/^\s*>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(`<blockquote class="md-quote">${inlineMarkdown(quotes.join("\n"), query)}</blockquote>`);
+      continue;
+    }
+    if (/^[-*]\s+\S/.test(trimmed) || /^\d+\.\s+\S/.test(trimmed)) {
+      flushParagraph();
+      const ordered = /^\d+\.\s+/.test(trimmed);
+      const items = [];
+      while (index < lines.length) {
+        const current = lines[index].trim();
+        const task = !ordered && current.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+        const item = ordered
+          ? current.match(/^\d+\.\s+(.+)$/)
+          : current.match(/^[-*]\s+(.+)$/);
+        if (task) {
+          const checked = task[1].toLowerCase() === "x";
+          items.push(`<li class="md-task"><span class="md-check" aria-hidden="true">${checked ? "☑" : "☐"}</span>${inlineMarkdown(task[2], query)}</li>`);
+        } else if (item) {
+          items.push(`<li>${inlineMarkdown(item[1], query)}</li>`);
+        } else {
+          break;
+        }
+        index += 1;
+      }
+      const tag = ordered ? "ol" : "ul";
+      blocks.push(`<${tag} class="md-list">${items.join("")}</${tag}>`);
+      continue;
+    }
+    paragraph.push(line);
+    index += 1;
+  }
+  flushParagraph();
+  return blocks.join("") || `<p class="md-p">${inlineMarkdown(restored, query)}</p>`;
+}
+
+function summaryLead(text, limit = 110) {
+  const original = String(text || "").trim();
+  if (!original) return { short: "未提取到", rest: "" };
+  const keep = [];
+  for (const line of restorePipeTables(original).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("```")) {
+      if (keep.length) break;
+      continue;
+    }
+    if (isMarkdownTableRow(trimmed) || isMarkdownTableSeparator(trimmed)) {
+      if (keep.length) break;
+      continue;
+    }
+    keep.push(trimmed.replace(/^#{1,3}\s+/, ""));
+    if (keep.join(" ").length >= limit || /[。！？!?：:]$/.test(keep[keep.length - 1])) break;
+  }
+  const short = (keep.join(" ").replace(/\s+/g, " ").trim() || clampText(original, limit).short);
+  const clipped = short.length > limit ? `${short.slice(0, limit).trimEnd()}…` : short;
+  const hasStructure = /\|.+\|/.test(original) || /^#{1,3}\s/m.test(original) || original.includes("```") || original.length > clipped.length + 8;
+  return { short: clipped, rest: hasStructure ? original : "" };
+}
+
+function compactMarkdown(text, query = "", limit = 160) {
+  const restored = restorePipeTables(String(text || ""));
+  const keep = [];
+  let hasTable = false;
+  for (const line of restored.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("```")) continue;
+    if (isMarkdownTableRow(trimmed) || isMarkdownTableSeparator(trimmed)) {
+      hasTable = true;
+      continue;
+    }
+    keep.push(trimmed.replace(/^#{1,3}\s+/, ""));
+  }
+  let joined = keep.join(" ").replace(/\s+/g, " ").trim() || String(text || "").replace(/\s+/g, " ").trim();
+  joined = joined.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, "$1");
+  joined = joined.replace(/\bhttps?:\/\/[^\s)<]+/g, "").replace(/\s+/g, " ").trim();
+  if (joined.length > limit) joined = `${joined.slice(0, limit).trimEnd()}…`;
+  if (hasTable) joined = joined ? `${joined} · 含表格` : "含对照表";
+  return inlineMarkdown(joined, query);
 }
 
 function highlightHtml(value, query) {
@@ -870,9 +1272,9 @@ function dailyItemHtml(item, tone = "") {
   return `<${tag} class="daily-item ${tone}${linked ? " linked" : ""}" ${attrs}>
     ${linked ? `<span class="source-dot ${escapeHtml(item.source)}"></span>` : `<span class="daily-bullet">•</span>`}
     <span>
-      <strong>${escapeHtml(item.text)}</strong>
-      ${item.reason ? `<small class="daily-item-detail"><b>原因：</b>${escapeHtml(item.reason)}</small>` : ""}
-      ${item.next_action ? `<small class="daily-item-detail"><b>后续：</b>${escapeHtml(item.next_action)}</small>` : ""}
+      <strong>${inlineMarkdown(item.text)}</strong>
+      ${item.reason ? `<small class="daily-item-detail"><b>原因：</b>${inlineMarkdown(item.reason)}</small>` : ""}
+      ${item.next_action ? `<small class="daily-item-detail"><b>后续：</b>${inlineMarkdown(item.next_action)}</small>` : ""}
     </span>
     ${linked ? `<small>查看原对话 ↗</small>` : ""}
   </${tag}>`;
@@ -942,11 +1344,11 @@ function summaryTreeItem(item, tone, project = false) {
     <span class="summary-tree-branch" aria-hidden="true"></span>
     <div class="summary-tree-content">
       <div class="summary-tree-title">
-        <strong>${escapeHtml(title)}</strong>
+        <strong>${inlineMarkdown(title)}</strong>
         ${summaryEvidenceButton(item, project)}
       </div>
-      ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
-      ${showNext ? `<div class="summary-child-node"><b>下一步</b><span>${escapeHtml(item.next_action)}</span></div>` : ""}
+      ${detail ? `<p>${inlineMarkdown(detail)}</p>` : ""}
+      ${showNext ? `<div class="summary-child-node"><b>下一步</b><span>${inlineMarkdown(item.next_action)}</span></div>` : ""}
     </div>
   </li>`;
 }
@@ -991,13 +1393,13 @@ function summaryHierarchyHtml(summary, { project = false } = {}) {
     <article class="summary-priority">
       <div class="summary-priority-main">
         <span class="summary-priority-label">最重要</span>
-        <h2>${escapeHtml(focus?.text || "今天没有识别到唯一主线")}</h2>
-        ${lead && lead !== focus?.text ? `<p>${escapeHtml(lead)}</p>` : ""}
+        <h2>${inlineMarkdown(focus?.text || "今天没有识别到唯一主线")}</h2>
+        ${lead && lead !== focus?.text ? `<p>${inlineMarkdown(lead)}</p>` : ""}
         ${summaryEvidenceButton(focus, project)}
       </div>
       <div class="summary-priority-next">
         <span>接下来先做</span>
-        <strong>${escapeHtml(firstStep?.text || summary.next_step_summary || "核对今天的结果并确定下一步")}</strong>
+        <strong>${inlineMarkdown(firstStep?.text || summary.next_step_summary || "核对今天的结果并确定下一步")}</strong>
         ${summaryEvidenceButton(firstStep, project)}
       </div>
     </article>
@@ -1026,7 +1428,7 @@ function dailyStatusBadge(c) {
 function dailyConversationRow(c) {
   const latest = String(c.latest_user || "").trim();
   const latestLine = latest
-    ? `<small class="daily-latest">你最近说：${escapeHtml(latest.length > 90 ? latest.slice(0, 90) + "…" : latest)}</small>`
+    ? `<small class="daily-latest">你最近说：${compactMarkdown(latest, "", 90)}</small>`
     : "";
   const badge = dailyStatusBadge(c);
   return `<button class="daily-conversation" type="button" data-source="${escapeHtml(c.source)}" data-id="${escapeHtml(c.id)}">
@@ -1303,6 +1705,7 @@ function syncControls() {
   renderTagChips();
   renderWorkspaceHeading();
   renderWorkspaceSummary();
+  renderSourceStarters();
 }
 
 function setView(view, { sync = true } = {}) {
@@ -1314,6 +1717,9 @@ function setView(view, { sync = true } = {}) {
     node.classList.toggle("active", node.dataset.view === state.view);
   });
   document.body.dataset.view = state.view;
+  const workspace = $(".app-workspace");
+  workspace?.classList.toggle("page-scroll", state.view !== "find");
+  syncSearchFloat();
   if (state.view === "daily" && !state.daily) {
     loadDaily().catch((error) => showToast(error.message));
   }
@@ -1574,7 +1980,7 @@ function renderClassificationList() {
       <span>
         <strong>${escapeHtml(item.title)}</strong>
         <small>${escapeHtml(item.workspace || "未命名工作区")} · ${escapeHtml(item.source)} · ${dateTime(item.updated_at)}</small>
-        <em>${escapeHtml(item.reason)}${item.project_name ? ` · 当前：${escapeHtml(item.project_name)}` : ""}</em>
+        <em>${inlineMarkdown(item.reason)}${item.project_name ? ` · 当前：${escapeHtml(item.project_name)}` : ""}</em>
       </span>
       <b>${Math.round((item.confidence || 0) * 100)}%</b>
     </label>
@@ -1639,7 +2045,7 @@ function renderList() {
         ...(item.tags || []).slice(0, 3),
       ].filter(Boolean);
       const match = item.match_snippet
-        ? `<span class="conversation-match">${highlightHtml(item.match_snippet, state.queryTerms)}</span>`
+        ? `<span class="conversation-match">${compactMarkdown(item.match_snippet, state.queryTerms, 180)}</span>`
         : "";
       return `
         <button class="conversation${selected ? " selected" : ""}${checked ? " checked" : ""}" type="button"
@@ -1647,8 +2053,8 @@ function renderList() {
           <span class="check-mark" role="checkbox" aria-checked="${checked}" data-check="1">${checked ? "✓" : ""}</span>
           <span class="source-dot ${item.source}"></span>
           <span class="conversation-main">
-            <span class="conversation-title">${highlightHtml(item.title, state.queryTerms)}</span>
-            <span class="conversation-preview">${highlightHtml(item.preview || "暂无预览", state.queryTerms)}</span>
+            <span class="conversation-title">${inlineMarkdown(item.title, state.queryTerms)}</span>
+            <span class="conversation-preview">${compactMarkdown(item.preview || "暂无预览", state.queryTerms, 180)}</span>
             ${match}
             <span class="chips">
               ${item.native_project
@@ -1670,6 +2076,89 @@ function renderList() {
     }).join("");
   }
   $("#loadMoreButton").hidden = state.items.length >= state.total;
+  updateGlobalSearchNav();
+}
+
+function syncSearchFloat() {
+  const workspace = $(".app-workspace");
+  if (!workspace) return;
+  workspace.classList.toggle(
+    "search-float",
+    workspace.classList.contains("page-scroll") && workspace.scrollTop > 40
+  );
+}
+
+function scrollChildInto(scroller, node, { offset = 24, align = "start" } = {}) {
+  if (!node) return false;
+  if (!scroller) {
+    node.scrollIntoView({ block: align === "center" ? "center" : "start", behavior: "auto" });
+    return true;
+  }
+  const extra = align === "center" ? scroller.clientHeight / 3 : offset;
+  const top = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - extra;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+  return true;
+}
+
+function listedConversations() {
+  return [...document.querySelectorAll("#conversationList .conversation")];
+}
+
+function updateGlobalSearchNav() {
+  const buttons = listedConversations();
+  const searching = Boolean(state.query.trim());
+  const index = buttons.findIndex((button) => button.classList.contains("selected"));
+  const stateNode = $("#searchNavState");
+  const prev = $("#searchPrev");
+  const next = $("#searchNext");
+  const nav = document.querySelector(".global-search-nav");
+  if (nav) nav.hidden = !searching;
+  if (stateNode) {
+    stateNode.hidden = !searching;
+    stateNode.textContent = searching
+      ? (buttons.length ? `${Math.max(1, index + 1)} / ${buttons.length}` : "没有匹配")
+      : "";
+  }
+  if (prev) prev.disabled = !searching || buttons.length < 2;
+  if (next) next.disabled = !searching || buttons.length < 2;
+}
+
+function listedConversationNode(source, id) {
+  return document.querySelector(
+    `#conversationList .conversation[data-source="${CSS.escape(String(source))}"][data-id="${CSS.escape(String(id))}"]`
+  );
+}
+
+function revealListedConversation(source, id) {
+  const next = listedConversationNode(source, id);
+  if (!next) return null;
+  scrollChildInto(document.querySelector(".workstream"), next, { align: "center" });
+  next.classList.add("search-current");
+  window.setTimeout(() => next.classList.remove("search-current"), 900);
+  return next;
+}
+
+async function focusListedConversation(direction = 1, { keepSearchFocus = false } = {}) {
+  if (!state.query.trim()) return;
+  const buttons = listedConversations();
+  if (!buttons.length) return;
+  let index = buttons.findIndex((button) => button.classList.contains("selected"));
+  if (index < 0) index = direction > 0 ? -1 : 0;
+  index = (index + direction + buttons.length) % buttons.length;
+  const button = buttons[index];
+  const source = button.dataset.source;
+  const id = button.dataset.id;
+  setView("find");
+  state.selected = { source, id };
+  setDetailOpen(true);
+  renderList();
+  const current = revealListedConversation(source, id);
+  if (current && !keepSearchFocus) current.focus({ preventScroll: true });
+  updateGlobalSearchNav();
+  await openDetail(source, id);
+  const next = revealListedConversation(source, id);
+  if (next && !keepSearchFocus) next.focus({ preventScroll: true });
+  updateGlobalSearchNav();
 }
 
 function editorTags(root) {
@@ -1732,7 +2221,9 @@ function renderDetail(data) {
     conversationSourceLabel(item),
     item.native_project ? `原生项目：${item.native_project}` : item.workspace,
   ].filter(Boolean).join(" · ");
-  fragment.querySelector(".detail-title").textContent = item.title;
+  const titleNode = fragment.querySelector(".detail-title");
+  titleNode.textContent = item.title;
+  titleNode.title = item.title;
   const statusLabels = {
     todo: "待继续",
     done: "已完成",
@@ -1750,6 +2241,62 @@ function renderDetail(data) {
   fragment.querySelector(".detail-close-button").addEventListener("click", () => {
     setDetailOpen(false, { focusToggle: true });
   });
+  const readerToggle = fragment.querySelector(".reader-toggle");
+  if (readerToggle) {
+    readerToggle.addEventListener("click", () => {
+      setReaderOpen(!document.body.classList.contains("reader-open"));
+    });
+    setReaderOpen(document.body.classList.contains("reader-open"));
+  }
+  readerOpenHook = () => {
+    loadFullConversationMessages().catch((error) => showToast(error.message));
+  };
+  const tocToggle = fragment.querySelector(".reader-toc-toggle");
+  const tocList = fragment.querySelector(".reader-toc-list");
+  if (tocToggle) {
+    tocToggle.addEventListener("click", () => setReaderTocOpen(!document.body.classList.contains("reader-toc-open")));
+  }
+  if (tocList) {
+    tocList.addEventListener("mouseover", (event) => {
+      const button = event.target.closest(".reader-toc-item");
+      if (!button) return;
+      showReaderTocTip(button, tocPreviews.get(button.dataset.turnKey) || "");
+    });
+    tocList.addEventListener("mouseleave", hideReaderTocTip);
+  }
+  const lookRoot = fragment.querySelector(".reader-look");
+  if (lookRoot) {
+    applyReaderLook();
+    lookRoot.querySelectorAll("[data-reader-preset]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const preset = button.dataset.readerPreset;
+        const next = { ...readerLookState(), preset };
+        if (READER_PRESETS[preset]?.bg) {
+          next.bg = READER_PRESETS[preset].bg;
+          next.ink = READER_PRESETS[preset].ink;
+        }
+        if (READER_PRESETS[preset]?.font) next.font = READER_PRESETS[preset].font;
+        if (preset === "inherit") next.font = "";
+        saveReaderLook(next);
+        applyReaderLook(next);
+      });
+    });
+    lookRoot.querySelector(".reader-bg")?.addEventListener("input", (event) => {
+      const next = { ...readerLookState(), preset: "custom", bg: event.target.value };
+      saveReaderLook(next);
+      applyReaderLook(next);
+    });
+    lookRoot.querySelector(".reader-ink")?.addEventListener("input", (event) => {
+      const next = { ...readerLookState(), preset: "custom", ink: event.target.value };
+      saveReaderLook(next);
+      applyReaderLook(next);
+    });
+    lookRoot.querySelector(".reader-font")?.addEventListener("change", (event) => {
+      const next = { ...readerLookState(), font: event.target.value };
+      saveReaderLook(next);
+      applyReaderLook(next);
+    });
+  }
 
   const launchTargetsRoot = fragment.querySelector(".launch-targets");
   const launchNote = fragment.querySelector(".launch-note");
@@ -1763,6 +2310,7 @@ function renderDetail(data) {
       const control = document.createElement(isLink ? "a" : "button");
       control.className = `button ${index === 0 ? "primary" : "secondary"}`;
       control.textContent = target.label;
+      control.title = target.note || target.label;
       if (isLink) {
         control.href = target.href;
       } else {
@@ -1786,7 +2334,7 @@ function renderDetail(data) {
                 target_id: target.target_id,
               }),
             });
-            showToast("已交给 ZCode 打开工作区");
+            showToast(target.exact ? `已打开：${target.label}` : `已交给本机打开：${target.label}`);
           } catch (error) {
             showToast(error.message);
           } finally {
@@ -1797,12 +2345,18 @@ function renderDetail(data) {
       launchTargetsRoot.append(control);
     });
     const target = launchTargets[0];
-    const capability = target.exact
-      ? "精确到会话"
-      : target.kind === "server_launch"
-        ? "工作区级续接"
-        : "仅打开客户端";
-    launchNote.textContent = `${capability} · ${target.note || ""}`;
+    const capabilityLabels = {
+      session: "精确到会话",
+      command: "精确恢复命令",
+      workspace: "仅工作区",
+      client: "仅打开客户端",
+      none: "无法续接",
+    };
+    const capability = capabilityLabels[target.capability]
+      || (target.exact ? "精确到会话" : target.kind === "server_launch" ? "仅工作区" : "仅打开客户端");
+    launchNote.textContent = target.capability === "none" && target.note
+      ? target.note
+      : `${capability}${target.note ? ` · ${target.note}` : ""}`;
     launchNote.classList.toggle("exact", !!target.exact);
   }
 
@@ -1927,16 +2481,16 @@ function renderDetail(data) {
     );
   });
 
-  const overviewRows = [
-    ["最初目标", data.overview.goal || "未提取到"],
-    ["最新请求", data.overview.latest_request || "未提取到"],
-    ["最新回应", data.overview.latest_response || "未提取到"],
-  ];
-  fragment.querySelector(".overview").innerHTML = overviewRows.map(([term, text]) => {
-    const clipped = clampText(text, 140);
-    if (!clipped.rest) return `<div><dt>${term}</dt><dd>${escapeHtml(clipped.short)}</dd></div>`;
-    return `<div><dt>${term}</dt><dd><details class="overview-clamp"><summary>${escapeHtml(clipped.short)}</summary><div class="overview-full">${escapeHtml(clipped.rest)}</div></details></dd></div>`;
-  }).join("");
+  const overview = data.overview || {};
+  const overviewRows = [];
+  if (!overview.opening_is_latest && String(overview.goal || "").trim()) {
+    overviewRows.push(["开场", "goal", overview.goal]);
+  }
+  overviewRows.push(["最近在问", "request", overview.latest_request || "还没有用户发言"]);
+  overviewRows.push(["最近回应", "response", overview.latest_response || "还没有助手回复"]);
+  fragment.querySelector(".overview").innerHTML = overviewRows.map(([term, kind, text]) => `
+    <div class="overview-row ${kind}"><dt>${term}</dt><dd>${inlineMarkdown(text)}</dd></div>
+  `).join("");
 
   const status = fragment.querySelector(".user-status");
   status.value = item.user_status || "";
@@ -1965,97 +2519,207 @@ function renderDetail(data) {
 
   let messageRole = "all";
   let messageQuery = "";
+  let messageOrder = messageOrderPreference();
   let activeMessageMatch = 0;
   let conversationMessages = data.messages;
   let fullMessagesLoaded = false;
   let fullMessagesLoading = false;
+  let transcriptView = "clean";
   const messagesRoot = fragment.querySelector(".messages");
   const messageCount = fragment.querySelector(".message-count");
-  const foldProcessInput = fragment.querySelector(".fold-process-input");
+  const viewButtons = [...fragment.querySelectorAll(".message-view-mode [data-view]")];
   const roleButtons = [...fragment.querySelectorAll(".message-role-filter [data-role]")];
+  const orderButtons = [...fragment.querySelectorAll(".message-order [data-order]")];
   const messageSearch = fragment.querySelector(".conversation-search-input");
   const messageSearchState = fragment.querySelector(".conversation-search-state");
   const previousMatchButton = fragment.querySelector(".conversation-search-previous");
   const nextMatchButton = fragment.querySelector(".conversation-search-next");
   const clearMessageSearchButton = fragment.querySelector(".conversation-search-clear");
 
+  const hiddenMessageCount = () => conversationMessages.filter((message) => messageVisibility(message) !== "visible").length;
+
   const renderMessages = () => {
     const needle = messageQuery.trim().toLocaleLowerCase();
+    const hiddenCount = hiddenMessageCount();
+    const showFullTranscript = transcriptView === "full";
     const filtered = conversationMessages.filter((message) => {
-      if (isInternalNoiseMessage(message)) return false;
+      if (!showFullTranscript && messageVisibility(message) !== "visible") return false;
       const roleMatch = messageRole === "all" || message.role === messageRole;
       const queryMatch = !needle || message.text.toLocaleLowerCase().includes(needle);
       return roleMatch && queryMatch;
     });
     if (activeMessageMatch >= filtered.length) activeMessageMatch = Math.max(0, filtered.length - 1);
-    messageCount.textContent = needle
-      ? `命中 ${filtered.length} 条 · 已读取 ${conversationMessages.length} 条`
-      : `${filtered.length} / ${conversationMessages.length} 条`;
+    if (needle) {
+      messageCount.textContent = `命中 ${filtered.length} 条 · 已读取 ${conversationMessages.length} 条`;
+    } else if (showFullTranscript) {
+      messageCount.textContent = `${filtered.length} 条 · 含过程 / 系统`;
+    } else if (hiddenCount) {
+      messageCount.textContent = `${filtered.length} 条正文 · ${hiddenCount} 条过程已隐藏`;
+    } else {
+      messageCount.textContent = `${filtered.length} 条`;
+    }
+    const searchNav = fragment.querySelector(".conversation-search-nav") || document.querySelector(".detail-pane .conversation-search-nav");
+    if (searchNav) searchNav.hidden = !needle;
+    messageSearchState.hidden = !needle && !fullMessagesLoading;
     messageSearchState.textContent = fullMessagesLoading
-      ? "正在读取完整对话…"
-      : (!needle ? "输入关键词" : (filtered.length ? `${activeMessageMatch + 1} / ${filtered.length}` : "没有匹配"));
-    previousMatchButton.disabled = filtered.length < 2;
-    nextMatchButton.disabled = filtered.length < 2;
+      ? "正在读取…"
+      : (needle ? (filtered.length ? `${activeMessageMatch + 1} / ${filtered.length}` : "没有匹配") : "");
+    previousMatchButton.disabled = !needle || filtered.length < 2;
+    nextMatchButton.disabled = !needle || filtered.length < 2;
     clearMessageSearchButton.disabled = !needle;
-    const foldProcess = foldProcessEnabled();
-    messagesRoot.innerHTML = filtered.length ? filtered.map((message, index) => {
+    viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === transcriptView));
+    orderButtons.forEach((button) => button.classList.toggle("active", button.dataset.order === messageOrder));
+    const foldProcess = !showFullTranscript;
+    const ordered = messageOrder === "newest" ? filtered.slice().reverse() : filtered;
+    messagesRoot.innerHTML = ordered.length ? ordered.map((message, index) => {
+      const visibility = messageVisibility(message);
+      const turnKey = messageTurnKey(message);
       const parts = splitMessageBody(message.text, message.role);
       const foldedHtml = parts.folded.map((block) => {
         const hit = needle && block.text.toLocaleLowerCase().includes(needle);
         const open = !foldProcess || hit ? " open" : "";
         return `<details class="message-fold ${escapeHtml(block.kind)}"${open}>
           <summary>${escapeHtml(block.title)}</summary>
-          <div class="message-fold-body">${highlightHtml(block.text, messageQuery)}</div>
+          <div class="message-fold-body md-body">${renderRichText(block.text, messageQuery)}</div>
         </details>`;
       }).join("");
       return `
-      <article class="message ${message.role}${needle && index === activeMessageMatch ? " active-match" : ""}"
-        data-message-match="${needle ? index : ""}">
-        <div class="message-head"><strong>${message.role === "user" ? "你" : "助手"}</strong><span>${dateTime(message.timestamp)}</span></div>
+      <article class="message ${message.role} visibility-${visibility}${needle && index === activeMessageMatch ? " active-match" : ""}"
+        data-turn-key="${escapeHtml(turnKey)}"${needle ? ` data-message-match="${index}"` : ""}>
+        <div class="message-head"><strong>${messageRoleLabel(message)}</strong><span>${dateTime(message.timestamp)}</span></div>
         <div class="message-bubble">
-          ${parts.main ? `<div class="message-text">${highlightHtml(parts.main, messageQuery)}</div>` : ""}
+          ${parts.main ? `<div class="message-text md-body">${renderRichText(parts.main, messageQuery)}</div>` : ""}
           ${foldedHtml}
         </div>
       </article>`;
     }).join("") : `<p class="muted">当前条件下没有消息。</p>`;
+    renderReaderToc();
   };
 
+  const tocPreviews = new Map();
+  const renderReaderToc = () => {
+    const nav = document.querySelector(".reader-toc-list") || fragment.querySelector(".reader-toc-list");
+    if (!nav) return;
+    tocPreviews.clear();
+    const users = conversationMessages
+      .map((message, index) => ({ message, index }))
+      .filter(({ message }) => message.role === "user" && messageVisibility(message) === "visible");
+    const tocUsers = messageOrder === "newest" ? users.slice().reverse() : users;
+    const tocToggleButton = document.querySelector(".reader-toc-toggle") || fragment.querySelector(".reader-toc-toggle");
+    if (tocToggleButton) {
+      tocToggleButton.dataset.count = String(tocUsers.length);
+      if (!document.body.classList.contains("reader-toc-open")) {
+        tocToggleButton.textContent = tocUsers.length ? `目录 · ${tocUsers.length}` : "目录";
+      }
+    }
+    if (!tocUsers.length) {
+      nav.innerHTML = `<p class="muted">没有可跳转的提问</p>`;
+      return;
+    }
+    nav.innerHTML = tocUsers.map(({ message }, order) => {
+      const key = messageTurnKey(message);
+      const full = (splitMessageBody(message.text, "user").main || message.text || "").trim();
+      const lead = summaryLead(full, 22).short.replace(/\*\*|`|#/g, "").trim() || `提问 ${order + 1}`;
+      tocPreviews.set(key, full);
+      return `<button type="button" class="reader-toc-item" data-turn-key="${escapeHtml(key)}">
+        <span class="reader-toc-index">${order + 1}</span>
+        <span class="reader-toc-lead">${escapeHtml(lead)}</span>
+      </button>`;
+    }).join("");
+  };
+
+  const scrollToTurnKey = (key) => {
+    const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(key) : key;
+    const node = detailPane.querySelector(`.message[data-turn-key="${safe}"]`);
+    if (!node) return false;
+    scrollChildInto(detailPane, node, { offset: 24 });
+    node.classList.add("toc-flash");
+    window.setTimeout(() => node.classList.remove("toc-flash"), 900);
+    document.querySelectorAll(".reader-toc-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.turnKey === key);
+    });
+    return true;
+  };
+
+  const jumpToTurn = (key) => {
+    hideReaderTocTip();
+    if (!key) return;
+    messageRole = "all";
+    messageQuery = "";
+    if (messageSearch) messageSearch.value = "";
+    roleButtons.forEach((button) => button.classList.toggle("active", button.dataset.role === "all"));
+    const go = () => {
+      renderMessages();
+      if (scrollToTurnKey(key)) return;
+      if (transcriptView !== "full") {
+        transcriptView = "full";
+        loadFullConversationMessages().then(() => {
+          renderMessages();
+          scrollToTurnKey(key);
+        }).catch((error) => showToast(error.message));
+        return;
+      }
+      showToast("没有找到这条提问");
+    };
+    if (!fullMessagesLoaded) {
+      loadFullConversationMessages().then(go).catch((error) => showToast(error.message));
+      return;
+    }
+    go();
+  };
+  readerJumpHandler = jumpToTurn;
+
   const focusMessageMatch = (direction = 0) => {
+    if (!messageQuery.trim()) return;
     const matches = [...messagesRoot.querySelectorAll("[data-message-match]")];
     if (!matches.length) return;
     activeMessageMatch = (activeMessageMatch + direction + matches.length) % matches.length;
     matches.forEach((node, index) => node.classList.toggle("active-match", index === activeMessageMatch));
     messageSearchState.textContent = `${activeMessageMatch + 1} / ${matches.length}`;
-    matches[activeMessageMatch].scrollIntoView({ block: "center", behavior: "smooth" });
+    scrollChildInto(detailPane, matches[activeMessageMatch], { align: "center" });
   };
 
-  const loadFullConversationMessages = async () => {
-    if (fullMessagesLoaded || fullMessagesLoading) return;
+  let fullLoadPromise = null;
+  const loadFullConversationMessages = () => {
+    if (fullMessagesLoaded) return Promise.resolve();
+    if (fullLoadPromise) return fullLoadPromise;
     fullMessagesLoading = true;
     renderMessages();
-    try {
-      const result = await api(
-        `/api/conversation-messages/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}?limit=300`
-      );
-      conversationMessages = result.messages || conversationMessages;
-      fullMessagesLoaded = true;
-    } catch (error) {
-      showToast(`读取完整对话失败：${error.message}`);
-    } finally {
-      fullMessagesLoading = false;
-      activeMessageMatch = 0;
-      renderMessages();
-      if (messageQuery.trim()) focusMessageMatch(0);
-    }
+    fullLoadPromise = (async () => {
+      try {
+        const result = await api(
+          `/api/conversation-messages/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}?limit=200`
+        );
+        conversationMessages = result.messages || conversationMessages;
+        fullMessagesLoaded = true;
+      } catch (error) {
+        fullLoadPromise = null;
+        showToast(`读取完整对话失败：${error.message}`);
+        throw error;
+      } finally {
+        fullMessagesLoading = false;
+        activeMessageMatch = 0;
+        renderMessages();
+        if (messageQuery.trim()) focusMessageMatch(0);
+      }
+    })();
+    return fullLoadPromise;
   };
 
-  if (foldProcessInput) {
-    foldProcessInput.checked = foldProcessEnabled();
-    foldProcessInput.addEventListener("change", () => {
-      setFoldProcessEnabled(foldProcessInput.checked);
-      renderMessages();
-    });
-  }
+  viewButtons.forEach((button) => button.addEventListener("click", () => {
+    transcriptView = button.dataset.view === "full" ? "full" : "clean";
+    activeMessageMatch = 0;
+    if (transcriptView === "full") {
+      loadFullConversationMessages().catch((error) => showToast(error.message));
+    }
+    renderMessages();
+  }));
+  orderButtons.forEach((button) => button.addEventListener("click", () => {
+    messageOrder = button.dataset.order === "newest" ? "newest" : "oldest";
+    try { localStorage.setItem(MESSAGE_ORDER_KEY, messageOrder); } catch { /* ignore quota / private mode */ }
+    activeMessageMatch = 0;
+    renderMessages();
+  }));
 
   renderMessages();
 
@@ -2079,8 +2743,13 @@ function renderDetail(data) {
   });
   messageSearch.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
+      if (!messageQuery.trim()) return;
       event.preventDefault();
       focusMessageMatch(event.shiftKey ? -1 : 1);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!messageQuery.trim()) return;
+      event.preventDefault();
+      focusMessageMatch(event.key === "ArrowDown" ? 1 : -1);
     } else if (event.key === "Escape") {
       messageSearch.value = "";
       messageQuery = "";
@@ -2221,6 +2890,9 @@ function renderDetail(data) {
   });
 
   detailPane.replaceChildren(fragment);
+  if (document.body.classList.contains("reader-open")) {
+    setReaderTocOpen(readerTocOpen());
+  }
 }
 
 async function saveDetail(root, item, quiet, auto = false) {
@@ -2501,10 +3173,72 @@ function switchSource(source, { preserveQuery = false } = {}) {
   resetAndLoad();
 }
 
+async function launchNewSession(source, targetId, href, kind) {
+  if (kind === "app_link" && href) {
+    window.location.href = href;
+    showToast(`已打开 ${SOURCE_LABELS[source] || source}`);
+    return;
+  }
+  await api("/api/launch", {
+    method: "POST",
+    body: JSON.stringify({ source, target_id: targetId || `${source}-new` }),
+  });
+  showToast(source === "grok" ? "已新开 Grok Build" : `已打开 ${SOURCE_LABELS[source] || source}`);
+}
+
+function renderSourceStarters() {
+  const host = $("#sourceStarters");
+  if (!host) return;
+  host.innerHTML = "";
+  const items = (state.launchers || []).filter((item) => item.source === state.source);
+  if (state.source === "all" || !items.length) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button secondary";
+    button.textContent = item.label;
+    button.title = item.note || item.label;
+    button.addEventListener("click", () => {
+      launchNewSession(item.source, item.target_id, item.href, item.kind).catch((error) => {
+        showToast(error.message);
+      });
+    });
+    host.append(button);
+  });
+}
+
+async function loadSourceLaunchers() {
+  try {
+    const health = await api("/api/health");
+    state.launchers = health.launchers || [];
+  } catch {
+    state.launchers = [];
+  }
+  renderSourceStarters();
+}
+
 $("#agentSwitcher").addEventListener("click", (event) => {
   const checkbox = event.target.closest("[data-source-enabled]");
   if (checkbox) {
     setSourceEnabled(checkbox).catch((error) => showToast(error.message));
+    return;
+  }
+  const starter = event.target.closest("[data-new-source]");
+  if (starter) {
+    event.preventDefault();
+    event.stopPropagation();
+    launchNewSession(
+      starter.dataset.newSource,
+      starter.dataset.targetId,
+      starter.dataset.href,
+      starter.dataset.kind,
+    ).catch((error) => {
+      showToast(error.message);
+    });
     return;
   }
   const button = event.target.closest("[data-source]");
@@ -3018,12 +3752,33 @@ $("#searchInput").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     clearTimeout(searchTimer);
     applySearch(event.currentTarget.value);
-  }
-  if (event.key === "Escape" && event.currentTarget.value) {
+  } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && state.query.trim()) {
+    event.preventDefault();
+    focusListedConversation(event.key === "ArrowDown" ? 1 : -1, { keepSearchFocus: true });
+  } else if (event.key === "Escape" && event.currentTarget.value) {
     clearTimeout(searchTimer);
     event.currentTarget.value = "";
     state.query = "";
     resetAndLoad();
+  }
+});
+$("#searchPrev")?.addEventListener("click", () => focusListedConversation(-1));
+$("#searchNext")?.addEventListener("click", () => focusListedConversation(1));
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest(".reader-toc-close")) {
+    event.preventDefault();
+    setReaderTocOpen(false);
+    return;
+  }
+  if (event.target.closest(".reader-toc-head") && !document.body.classList.contains("reader-toc-open")) {
+    setReaderTocOpen(true);
+    return;
+  }
+  const item = event.target.closest(".reader-toc-item[data-turn-key]");
+  if (item && readerJumpHandler) {
+    event.preventDefault();
+    readerJumpHandler(item.dataset.turnKey);
   }
 });
 
@@ -3183,6 +3938,30 @@ $("#backupFileInput").addEventListener("change", (event) => {
 
 
 
+function startHubWatchdog() {
+  const banner = $("#hubOfflineBanner");
+  const button = $("#hubReconnectButton");
+  let offline = false;
+  const check = async () => {
+    try {
+      const data = await api("/api/health");
+      if (!data || data.ok === false) throw new Error("offline");
+      if (offline) {
+        offline = false;
+        if (banner) banner.hidden = true;
+        showToast("对话中心已重新连上");
+      }
+    } catch {
+      offline = true;
+      if (banner) banner.hidden = false;
+    }
+  };
+  button?.addEventListener("click", () => {
+    check().catch(() => {});
+  });
+  window.setInterval(check, 15000);
+}
+
 $("#themeButton").addEventListener("click", openThemeDialog);
 $("#detailToggleButton").addEventListener("click", () => {
   toggleDetailDrawer().catch((error) => showToast(error.message));
@@ -3190,6 +3969,11 @@ $("#detailToggleButton").addEventListener("click", () => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !$(".find-layout").classList.contains("detail-open")) return;
   if (event.target.closest("dialog")) return;
+  if (document.body.classList.contains("reader-open")) {
+    event.preventDefault();
+    setReaderOpen(false);
+    return;
+  }
   setDetailOpen(false, { focusToggle: true });
 });
 $("#openThemeSettingsButton").addEventListener("click", openThemeDialog);
@@ -3223,7 +4007,11 @@ async function boot() {
     let savedTheme = "";
     try { savedTheme = localStorage.getItem(THEME_KEY) || ""; } catch {}
     applyTheme(THEMES[savedTheme] ? savedTheme : currentTheme(), { persist: false });
+    applyReaderLook();
+    detailPane.addEventListener("scroll", hideReaderTocTip, { passive: true });
     initSidebarCollapse();
+    startHubWatchdog();
+    $(".app-workspace")?.addEventListener("scroll", syncSearchFloat, { passive: true });
     setDetailOpen(false);
     initDetailResizer();
     initSourceDetails();
@@ -3241,6 +4029,7 @@ async function boot() {
     await loadSetupStatus({ openIfRequired: true });
     _log("检查数据源…");
     await waitForIndexReady();
+    loadSourceLaunchers().catch(() => {});
     readUrlState();
     setView(state.view, { sync: false });
     _log("加载对话…");
