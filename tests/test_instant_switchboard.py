@@ -266,7 +266,7 @@ class InstantIndexTests(unittest.TestCase):
             self.assertEqual(command[0], str(exe.resolve()))
             self.assertEqual(command[1:], ["--resume", "session-123456"])
             self.assertEqual(popen.call_args.kwargs["env"]["HTTPS_PROXY"], their_proxy)
-            self.assertIn(str(exe.parent), popen.call_args.kwargs["env"]["PATH"])
+            self.assertIn(str(exe.parent.resolve()), popen.call_args.kwargs["env"]["PATH"])
 
             socks = {"HTTP_PROXY": their_proxy, "ALL_PROXY": "socks5://127.0.0.1:18888"}
             with mock.patch("server._tcp_open", side_effect=lambda host, port, timeout=0.2: port == 18888):
@@ -773,7 +773,7 @@ class AdapterRegistryTests(unittest.TestCase):
                 items, messages = source_adapters._load_qoder_family("qoder", index_db, root)
             self.assertEqual(1, len(items))
             self.assertEqual("Continue project optimization", items[0]["title"])
-            self.assertEqual(str(compact), items[0]["rollout_path"])
+            self.assertEqual(str(compact.resolve()), items[0]["rollout_path"])
             self.assertEqual(2, len(messages[items[0]["id"]]))
             self.assertEqual("Improve the tray integration.", messages[items[0]["id"]][0]["text"])
             self.assertEqual(1, messages[items[0]["id"]][0]["line"])
