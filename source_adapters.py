@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+from readable import readable_turn_text
+
 _SKILL_ROOT = Path(__file__).resolve().parent / "skills" / "find-agent-data"
 if _SKILL_ROOT.is_dir() and str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
@@ -119,32 +121,8 @@ def basename(value: Any) -> str:
     return text.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] or "无工作区"
 
 
-def content_text(value: Any) -> str:
-    if isinstance(value, str):
-        return redact(value)
-    if isinstance(value, list):
-        parts: list[str] = []
-        for block in value:
-            if isinstance(block, str):
-                parts.append(block)
-                continue
-            if not isinstance(block, dict):
-                continue
-            kind = str(block.get("type") or "").casefold()
-            if kind in {
-                "thinking", "reasoning", "tool_use", "tool_result", "function",
-                "function_call", "computer_initialize_state", "server_tool_use",
-            }:
-                continue
-            text = block.get("text")
-            if isinstance(text, str):
-                parts.append(text)
-        return redact("\n".join(parts))
-    if isinstance(value, dict):
-        for key in ("text", "content", "value"):
-            if key in value:
-                return content_text(value[key])
-    return ""
+def content_text(value: Any, role: str = "assistant") -> str:
+    return redact(readable_turn_text(role, value))
 
 
 def json_value(value: Any, fallback: Any) -> Any:
@@ -218,7 +196,10 @@ def default_candidates(source: str) -> list[Path]:
         else appdata
     )
     if source == "claude":
-        return [home / ".claude"]
+        configured = str(os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+        homes = [Path(configured).expanduser()] if configured else []
+        homes.append(home / ".claude")
+        return homes
     if source == "cursor":
         return [application_support / "Cursor" / "User" / "globalStorage"]
     if source == "qclaw":
@@ -262,22 +243,24 @@ def default_candidates(source: str) -> list[Path]:
 
 
 def _claude_transcript_files(path: Path) -> list[Path]:
-    projects = path / "projects"
-    if not projects.is_dir():
-        return []
     result: list[Path] = []
-    for file_path in projects.rglob("*.jsonl"):
-        try:
-            relative_parts = [part.casefold() for part in file_path.relative_to(projects).parts]
-        except ValueError:
-            relative_parts = []
-        if (
-            "subagents" in relative_parts
-            or file_path.name.casefold().startswith("agent-")
-            or file_path.name.casefold().endswith(".trajectory.jsonl")
-        ):
+    for root_name in ("projects", "sessions"):
+        root = path / root_name
+        if not root.is_dir():
             continue
-        result.append(file_path)
+        for file_path in root.rglob("*.jsonl"):
+            try:
+                relative_parts = [part.casefold() for part in file_path.relative_to(root).parts]
+            except ValueError:
+                relative_parts = []
+            if (
+                "subagents" in relative_parts
+                or file_path.name.casefold() in {"history.jsonl"}
+                or file_path.name.casefold().startswith("agent-")
+                or file_path.name.casefold().endswith(".trajectory.jsonl")
+            ):
+                continue
+            result.append(file_path)
     return result
 
 
@@ -304,11 +287,13 @@ def _claude_history_ids(path: Path) -> set[str]:
 
 
 def _claude_session_index_entries(path: Path) -> dict[str, dict[str, Any]]:
-    projects = path / "projects"
     result: dict[str, dict[str, Any]] = {}
-    if not projects.is_dir():
-        return result
-    for index_path in projects.rglob("sessions-index.json"):
+    roots = [path / "projects", path / "sessions"]
+    index_paths: list[Path] = []
+    for root in roots:
+        if root.is_dir():
+            index_paths.extend(root.rglob("sessions-index.json"))
+    for index_path in index_paths:
         try:
             payload = json.loads(index_path.read_text(encoding="utf-8", errors="ignore"))
         except (OSError, ValueError, json.JSONDecodeError):
@@ -912,7 +897,7 @@ def discover_extra_sources(
 
 
 def _claude_user_text(value: Any) -> str:
-    text = content_text(value)
+    text = content_text(value, "user")
     if not text:
         return ""
     if "<user_query>" in text:
@@ -1078,7 +1063,7 @@ def _load_claude(
                     text = (
                         _claude_user_text(message.get("content"))
                         if role == "user"
-                        else content_text(message.get("content"))
+                        else content_text(message.get("content"), role)
                     )
                     if not text:
                         continue
@@ -1171,6 +1156,10 @@ def _load_claude(
     return list(items_by_id.values()), messages_by_id
 
 
+def _codepilot_visible_text(value: Any, role: str = "assistant") -> str:
+    return content_text(value, role)
+
+
 def _load_codepilot(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     items: list[dict[str, Any]] = []
     messages_by_id: dict[str, list[dict[str, Any]]] = {}
@@ -1188,11 +1177,11 @@ def _load_codepilot(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[di
             messages = [
                 {
                     "role": str(message["role"]),
-                    "text": redact(message["content"]),
+                    "text": text,
                     "timestamp": epoch(message["created_at"]),
                 }
                 for message in rows
-                if redact(message["content"])
+                if (text := _codepilot_visible_text(message["content"], str(message["role"])))
             ]
             if not any(message["role"] == "user" for message in messages):
                 continue
@@ -1229,7 +1218,7 @@ def _load_cursor(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
         )
         for row in rows:
             session_id = str(row["id"])
-            body = redact(row["body"])
+            body = content_text(row["body"], "user")
             messages = (
                 [{"role": "user", "text": body, "timestamp": epoch(row["updated_at"])}]
                 if body else []
@@ -1264,11 +1253,11 @@ def _load_marvis(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[
             messages = [
                 {
                     "role": str(message["role"]),
-                    "text": redact(message["content"]),
+                    "text": text,
                     "timestamp": epoch(message["created_at"]),
                 }
                 for message in rows
-                if redact(message["content"])
+                if (text := content_text(message["content"], str(message["role"])))
             ]
             if not any(message["role"] == "user" for message in messages):
                 continue
@@ -1326,7 +1315,7 @@ def _load_qclaw(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
                     role = str(message.get("role") or "").casefold()
                     if role not in {"user", "assistant"}:
                         continue
-                    text = content_text(message.get("content"))
+                    text = content_text(message.get("content"), role)
                     if not text:
                         continue
                     messages.append(
@@ -1408,14 +1397,15 @@ def _load_qoderwork_db(
         )
         messages: list[dict[str, Any]] = []
         for message in message_rows:
-            text = redact(message["searchable_text"])
+            role = str(message["role"] or "")
+            parts = json_value(message["parts"], [])
+            text = content_text(parts, role)
             if not text:
-                parts = json_value(message["parts"], [])
-                text = content_text(parts)
+                text = content_text(message["searchable_text"], role)
             if text:
                 messages.append(
                     {
-                        "role": str(message["role"]),
+                        "role": role,
                         "text": text,
                         "timestamp": epoch(message["created_at"]),
                     }
@@ -1458,10 +1448,6 @@ def normalize_role(value: Any) -> str:
 
 
 def custom_content(value: Any) -> str:
-    if isinstance(value, str) and value.lstrip().startswith(("[", "{")):
-        parsed = json_value(value, value)
-        if parsed is not value:
-            return content_text(parsed)
     return content_text(value)
 
 
@@ -1750,7 +1736,7 @@ def load_custom_source(
         return [], {}, f"{type(exc).__name__}: {exc}"
 
 
-def _zcode_text_parts(conn: sqlite3.Connection, message_id: Any) -> str:
+def _zcode_text_parts(conn: sqlite3.Connection, message_id: Any, role: str = "assistant") -> str:
     texts: list[str] = []
     for row in conn.execute(
         "SELECT data FROM part WHERE message_id=? ORDER BY sequence",
@@ -1764,7 +1750,7 @@ def _zcode_text_parts(conn: sqlite3.Connection, message_id: Any) -> str:
         text = str(payload.get("text") or "").strip()
         if text:
             texts.append(text)
-    return redact("\n\n".join(texts))
+    return content_text("\n\n".join(texts), role)
 
 
 def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
@@ -1803,7 +1789,7 @@ def _load_zcode(path: Path) -> tuple[list[dict[str, Any]], dict[str, list[dict[s
                     role = "assistant"
                 else:
                     continue
-                text = _zcode_text_parts(conn, message["id"])
+                text = _zcode_text_parts(conn, message["id"], role)
                 if not text:
                     continue
                 if role == "assistant" and not model:
@@ -1977,9 +1963,9 @@ def _load_qwenworkcn_legacy(path: Path) -> tuple[list[dict[str, Any]], dict[str,
                 content = message.get("content")
                 parts = content.get("parts") if isinstance(content, dict) else None
                 if isinstance(parts, list):
-                    text = redact("\n".join(str(p) for p in parts if isinstance(p, str)))
+                    text = content_text(parts, role)
                 else:
-                    text = content_text(content)
+                    text = content_text(content, role)
                 if not text:
                     continue
                 messages.append(

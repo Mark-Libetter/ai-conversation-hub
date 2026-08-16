@@ -18,7 +18,11 @@ if not getattr(sys, "frozen", False):
     except (ImportError, OSError, AttributeError, TypeError):
         pass
 
+import ctypes
 import secrets
+import shlex
+import shutil
+import socket
 import sqlite3
 import subprocess
 import threading
@@ -26,7 +30,7 @@ import time
 import urllib.parse
 import webbrowser
 from collections import Counter, OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from app_paths import CONFIG_PATH, DATA_DIR, NOTES_DB, RESOURCE_DIR, STATIC_DIR
+from readable import readable_turn_text
 from repair_sources import atomic_write_config, repair, source_status
 from source_adapters import (
     EXTRA_SOURCES,
@@ -54,6 +59,7 @@ LOCAL_TZ = timezone(timedelta(hours=8))
 DAILY_PROMPT_VERSION = 14
 HUB_SCHEMA_VERSION = 17
 APP_VERSION = "0.4.0"
+SEARCH_CONTENT_VERSION = "readable-v1"
 BACKUP_FORMAT_VERSION = 1
 BACKUP_TABLES = (
     "notes", "daily_summaries", "conversation_relations", "continuation_memory_cards",
@@ -596,6 +602,8 @@ def notes_db() -> sqlite3.Connection:
         existing = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    ensure_column("codex_search_meta", "message_count", "INTEGER NOT NULL DEFAULT 0")
 
     conn.execute(
         """
@@ -1217,6 +1225,90 @@ def local_day(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, LOCAL_TZ).date().isoformat()
 
 
+HERMES_INTERNAL_DISPLAY_KINDS = {"model_switch", "auto_continue", "hidden"}
+INTERNAL_USER_PREFIXES = (
+    "[System:",
+    "[CONTEXT COMPACTION",
+    "<system-reminder",
+    "System: The active model",
+    "# AGENTS.md",
+    "<INSTRUCTIONS>",
+    "<environment_context",
+)
+INTERNAL_ASSISTANT_MARKERS = (
+    "内存满了",
+    "批量精简",
+    "memory consolidation failed",
+    "stop retrying memory calls",
+    "memory would be at",
+    "over the limit. remove or shorten",
+)
+ASSISTANT_USER_FACING_MARKERS = ("达令菁", "\n##", "🎉")
+ASSISTANT_PROGRESS_MARKERS = (
+    "已成功杀掉",
+    "没杀掉",
+    "先杀进程",
+    "等几秒",
+    "换姿势",
+    "换正确姿势",
+    "换个更稳",
+    "换终极",
+    "启动命令已执行",
+    "脚本写好了",
+    "重新测试",
+    "用管道喂",
+    "先确认桌面路径",
+    "开工！",
+    "BOM 加上了",
+    "路径短名没变化",
+)
+ASSISTANT_PROGRESS_COLON_RE = re.compile(r"验证|杀掉|启动|进程|窗口|脚本|测试|换")
+
+
+def is_assistant_progress_message(text: str) -> bool:
+    """Mid-turn tool narration the user did not ask to read as a reply."""
+    stripped = str(text or "").strip()
+    if not stripped or len(stripped) > 280:
+        return False
+    if any(marker in stripped for marker in ASSISTANT_USER_FACING_MARKERS):
+        return False
+    if any(marker in stripped for marker in ASSISTANT_PROGRESS_MARKERS):
+        return True
+    if stripped.endswith(("：", ":")) and ASSISTANT_PROGRESS_COLON_RE.search(stripped):
+        return True
+    return False
+
+
+def classify_transcript_message(role: str, text: str, display_kind: str = "") -> str:
+    """Tag a turn as visible, system bookkeeping, or mid-turn progress."""
+    kind = str(display_kind or "").casefold()
+    if kind in HERMES_INTERNAL_DISPLAY_KINDS:
+        return "system"
+    stripped = str(text or "").strip()
+    if not stripped:
+        return "system"
+    lowered = stripped.casefold()
+    role_name = str(role or "")
+    if role_name == "user":
+        if stripped.startswith(INTERNAL_USER_PREFIXES) or "your previous response was truncated" in lowered:
+            return "system"
+        return "visible"
+    if role_name != "assistant":
+        return "visible"
+    if any(marker in lowered or marker in stripped for marker in INTERNAL_ASSISTANT_MARKERS) and len(stripped) < 280:
+        return "system"
+    if len(stripped) < 140 and any(token in stripped for token in ("匹配到了两条", "也有歧义", "唯一匹配的压缩替换")):
+        return "system"
+    if is_assistant_progress_message(stripped):
+        return "progress"
+    return "visible"
+
+
+def is_internal_noise_message(role: str, text: str, display_kind: str = "") -> bool:
+    """True when the turn should not appear in the default readable transcript."""
+    return classify_transcript_message(role, text, display_kind) != "visible"
+
+
 def sanitize_daily_text(value: Any, role: str, limit: int = 12000) -> str:
     text = str(value or "").replace("\x00", "").strip()
     if not text:
@@ -1225,11 +1317,13 @@ def sanitize_daily_text(value: Any, role: str, limit: int = 12000) -> str:
     if delegated:
         text = delegated.group(1).strip()
     text = re.sub(
-        r"<(?:environment_context|recommended_plugins|system-reminder)\b[^>]*>.*?</(?:environment_context|recommended_plugins|system-reminder)>",
+        r"<(?:environment_context|recommended_plugins|system-reminder|thinking|think|thought|reasoning)\b[^>]*>.*?</(?:environment_context|recommended_plugins|system-reminder|thinking|think|thought|reasoning)>",
         "",
         text,
         flags=re.DOTALL | re.IGNORECASE,
     ).strip()
+    if is_internal_noise_message(role, text):
+        return ""
     if role == "user" and (
         text.startswith("<environment_context")
         or text.startswith("<recommended_plugins")
@@ -1241,6 +1335,88 @@ def sanitize_daily_text(value: Any, role: str, limit: int = 12000) -> str:
     return clean_text(text, limit)
 
 
+def normalize_local_path(value: str | Path) -> Path:
+    text = str(value or "").strip()
+    if text.startswith("\\\\?\\"):
+        text = text[4:]
+    return Path(text)
+
+
+def extract_codex_user_text(value: Any) -> str:
+    text = str(value or "").replace("\x00", "")
+    if "<user_query>" in text:
+        text = text.split("<user_query>", 1)[1].split("</user_query>", 1)[0]
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    if stripped.startswith(INTERNAL_USER_PREFIXES):
+        return ""
+    return stripped
+
+
+def _codex_event_timestamp(event: dict[str, Any]) -> float:
+    raw = event.get("timestamp")
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _codex_payload_text(payload: dict[str, Any], role: str) -> str:
+    parts: list[str] = []
+    for part in payload.get("content") or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") not in {"input_text", "output_text"} or not part.get("text"):
+            continue
+        parts.append(str(part["text"]))
+    text = "\n".join(parts)
+    if role == "user":
+        return extract_codex_user_text(text)
+    return text.strip()
+
+
+def iter_codex_visible_messages(rollout_path: str | Path) -> list[dict[str, Any]]:
+    path = normalize_local_path(rollout_path)
+    if not str(rollout_path or "") or not path.is_file():
+        return []
+    messages: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int]] = set()
+
+    def add(role: str, text: str, timestamp: float) -> None:
+        cleaned = str(text or "").strip()
+        if role == "user":
+            cleaned = extract_codex_user_text(cleaned)
+        if not cleaned:
+            return
+        key = (role, cleaned[:240], int(timestamp or 0))
+        if key in seen:
+            return
+        seen.add(key)
+        messages.append({"role": role, "text": clean_text(cleaned, 8000), "timestamp": float(timestamp or 0)})
+
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                kind = str(event.get("type") or "")
+                payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                ts = _codex_event_timestamp(event)
+                if kind == "response_item" and payload.get("type") == "message":
+                    role = str(payload.get("role") or "")
+                    if role in {"user", "assistant"}:
+                        add(role, _codex_payload_text(payload, role), ts)
+                    continue
+                if kind == "event_msg" and payload.get("type") == "agent_message":
+                    add("assistant", str(payload.get("message") or ""), ts)
+    except OSError:
+        return []
+    return messages
+
+
 def claim_text(value: str, limit: int = 260) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     if not text:
@@ -1248,6 +1424,38 @@ def claim_text(value: str, limit: int = 260) -> str:
     parts = [part.strip() for part in re.split(r"(?<=[。！？!?])\s*", text) if part.strip()]
     preferred = next((part for part in parts if 12 <= len(part) <= limit), parts[0] if parts else text)
     return clean_text(preferred, limit)
+
+
+def overview_snippet(value: Any, limit: int = 180) -> str:
+    """One readable line for the detail digest. Not an inferred goal."""
+    kept: list[str] = []
+    for line in str(value or "").replace("\r\n", "\n").split("\n"):
+        text = line.strip()
+        if not text or text.startswith("```"):
+            continue
+        if text.startswith("|") or re.fullmatch(r"[:\-\s|]+", text):
+            continue
+        text = re.sub(r"^#{1,3}\s+", "", text)
+        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+        kept.append(text)
+        if len(" ".join(kept)) >= 12:
+            break
+    blob = " ".join(kept) if kept else str(value or "")
+    parts = [part.strip() for part in re.split(r"(?<=[。！？!?])\s*", blob) if part.strip()]
+    chosen: list[str] = []
+    for part in parts or [blob]:
+        chosen.append(part)
+        if len("".join(chosen)) >= 18:
+            break
+    return clean_text("".join(chosen), limit)
+
+
+def overview_same_line(left: str, right: str) -> bool:
+    a = re.sub(r"\s+", "", str(left or ""))
+    b = re.sub(r"\s+", "", str(right or ""))
+    if not a or not b:
+        return not a
+    return a == b or a.startswith(b) or b.startswith(a)
 
 
 SearchNode = tuple[Any, ...]
@@ -1534,51 +1742,95 @@ def launch_targets_for(item: Conversation) -> list[dict[str, Any]]:
     session_id = str(item.id or "")
     safe_session_id = bool(re.fullmatch(r"[A-Za-z0-9._:-]{6,240}", session_id))
     if item.source == "codex" and safe_session_id:
-        return [{
+        targets = [{
             "target_id": "codex-session",
             "kind": "deep_link",
+            "capability": "session",
             "label": "继续 Codex 会话",
             "href": f"codex://threads/{urllib.parse.quote(session_id, safe='')}",
             "exact": True,
             "note": "精确定位到这条 Codex 会话",
         }]
-    if item.source == "claude" and safe_session_id and "metadata-only" not in item.source_kind:
-        return [{
-            "target_id": "claude-resume-command",
-            "kind": "copy_command",
-            "label": "复制 Claude 恢复命令",
-            "value": f"claude --resume {session_id}",
-            "exact": True,
-            "note": "在终端粘贴即可恢复这条会话；中心不会代你执行命令",
-        }]
+        return _with_starter(targets, "codex")
+    if item.source == "claude":
+        targets: list[dict[str, Any]] = []
+        if safe_session_id and claude_transcript_available(item) and discover_claude_executable():
+            targets.append({
+                "target_id": "claude-session",
+                "kind": "server_launch",
+                "capability": "session",
+                "label": "继续 Claude Code 会话",
+                "exact": True,
+                "note": "在本机终端打开 claude --resume，精确打开这条会话",
+            })
+        elif safe_session_id and not claude_transcript_available(item):
+            targets.append({
+                "target_id": "claude-no-transcript",
+                "kind": "copy_command",
+                "capability": "none",
+                "label": "复制会话 ID（无法打开这条）",
+                "value": session_id,
+                "exact": False,
+                "note": "本机只有 history.jsonl 提问记录，没有 projects/sessions 会话文件，Claude 无法 --resume",
+            })
+        return _with_starter(targets, "claude")
     if item.source == "grok" and safe_session_id:
-        return [{
+        executable = discover_grok_executable()
+        targets: list[dict[str, Any]] = []
+        if executable:
+            targets.append({
+                "target_id": "grok-session",
+                "kind": "server_launch",
+                "capability": "session",
+                "label": "继续 Grok Build 会话",
+                "exact": True,
+                "note": f"启动本机 {executable.name}，精确打开这条会话",
+            })
+        command = (
+            f"{_cli_quote(executable)} --resume {session_id}"
+            if executable
+            else f"grok --resume {session_id}"
+        )
+        targets.append({
             "target_id": "grok-resume-command",
             "kind": "copy_command",
-            "label": "复制 Grok Build 恢复命令",
-            "value": f"grok --resume {session_id}",
+            "capability": "command",
+            "label": "复制 Grok 恢复命令",
+            "value": command,
             "exact": True,
-            "note": "在终端粘贴即可恢复这条会话；中心不会代你执行命令",
-        }]
+            "note": (
+                "可在本机终端粘贴。若直连超时，给 Grok 配 HTTP_PROXY 或在 sources.json 写 extra_sources.grok.proxy"
+                if executable
+                else "本机未找到 Grok CLI。安装后，或在 sources.json 填写 extra_sources.grok.executable"
+            ),
+        })
+        return _with_starter(targets, "grok")
     if item.source == "workbuddy" and safe_session_id:
-        return [{
+        return _with_starter([{
             "target_id": "workbuddy-session",
             "kind": "deep_link",
+            "capability": "session",
             "label": "继续 WorkBuddy 会话",
             "href": f"workbuddy://chat/{urllib.parse.quote(session_id, safe='')}",
             "exact": True,
             "note": "精确定位到这条 WorkBuddy 会话",
-        }]
+        }], "workbuddy")
     if item.source == "zcode" and str(item.cwd or "").strip():
-        return [{
+        return _with_starter([{
             "target_id": "zcode-workspace",
             "kind": "server_launch",
+            "capability": "workspace",
             "label": "在 ZCode 打开工作区",
             "exact": False,
-            "note": "绕过被其他软件接管的 zcode:// 协议；ZCode 当前只能验证到工作区，不能精确到会话",
-        }]
+            "note": "只能验证到工作区，不能精确到会话",
+        }], "zcode")
+    if item.source == "hermes":
+        targets = []
+        opened = client_open_target("hermes")
+        if opened:
+            targets.append(opened)
+        return _with_starter(targets, "hermes")
     app_links = {
-        "hermes": ("Hermes", "hermes://"),
         "qoder": ("Qoder", "qoder://"),  # 注册表已验证的 URL Protocol；仅打开客户端
         "cursor": ("Cursor", "cursor://"),
         "qclaw": ("QClaw", "qclaw://"),
@@ -1587,15 +1839,65 @@ def launch_targets_for(item: Conversation) -> list[dict[str, Any]]:
     app_link = app_links.get(item.source)
     if app_link:
         label, href = app_link
-        return [{
+        return _with_starter([{
             "target_id": f"{item.source}-app",
             "kind": "app_link",
+            "capability": "client",
             "label": f"打开 {label}",
             "href": href,
             "exact": False,
-            "note": "可打开客户端，但该客户端未提供可验证的会话级跳转",
-        }]
-    return []
+            "note": "只能打开客户端，不能精确到这条会话",
+        }], item.source)
+    return _with_starter([], item.source)
+
+
+def resume_descriptor(item: Conversation) -> dict[str, Any]:
+    """Compact, honest resume capability for agents."""
+    targets = launch_targets_for(item)
+    if not targets:
+        return {
+            "capability": "none",
+            "exact": False,
+            "kind": "",
+            "label": "",
+            "command": "",
+            "href": "",
+            "note": "无可验证续接方式",
+        }
+    target = targets[0]
+    return {
+        "capability": str(target.get("capability") or "client"),
+        "exact": bool(target.get("exact")),
+        "kind": str(target.get("kind") or ""),
+        "label": str(target.get("label") or ""),
+        "command": str(target.get("value") or ""),
+        "href": str(target.get("href") or ""),
+        "note": str(target.get("note") or ""),
+    }
+
+
+def build_agent_handoff(item: Conversation, overview: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Short JSON packet for another agent to continue this conversation."""
+    overview = overview or {}
+    resume = resume_descriptor(item)
+    return {
+        "schema": "ai-conversation-hub/agent-handoff-v1",
+        "source": item.source,
+        "id": item.id,
+        "title": clean_text(item.title, 300),
+        "workspace": clean_text(item.workspace, 300),
+        "cwd": clean_text(item.cwd, 1000),
+        "updated_at": float(item.updated_at or 0),
+        "opening": overview.get("goal") or "",
+        "latest_request": overview.get("latest_request") or "",
+        "latest_response": overview.get("latest_response") or "",
+        "resume": resume,
+        "memory_card": {"included": False},
+        "safety": {
+            "historical_untrusted": True,
+            "auto_execute": False,
+        },
+    }
 
 
 def _zcode_candidate(value: Any) -> Path | None:
@@ -1690,8 +1992,830 @@ def discover_zcode_executable() -> Path | None:
     return None
 
 
+def _grok_binary_names() -> tuple[str, ...]:
+    return ("grok.exe", "grok") if os.name == "nt" else ("grok",)
+
+
+def _is_grok_binary(path: Path) -> bool:
+    try:
+        return path.is_file() and path.name.casefold() in {"grok.exe", "grok"}
+    except OSError:
+        return False
+
+
+def _grok_user_settings() -> dict[str, Any]:
+    extra = load_source_config().get("extra_sources")
+    extra = extra if isinstance(extra, dict) else {}
+    block = extra.get("grok")
+    return block if isinstance(block, dict) else {}
+
+
+def claude_transcript_available(item: Conversation) -> bool:
+    """Claude --resume only works when a real session JSONL still exists.
+
+    history.jsonl keeps leftover prompt IDs after projects/sessions files are gone.
+    """
+    path = Path(str(item.rollout_path or "")).expanduser()
+    try:
+        return (
+            path.is_file()
+            and path.suffix.casefold() == ".jsonl"
+            and path.name.casefold() != "history.jsonl"
+        )
+    except OSError:
+        return False
+
+
+def _cli_resume_targets(
+    *,
+    source: str,
+    session_id: str,
+    title: str,
+    executable: Path | None,
+    command_name: str,
+    extra_note: str = "",
+) -> list[dict[str, Any]]:
+    """Exact session resume via this computer's own CLI. No guessed URI."""
+    targets: list[dict[str, Any]] = []
+    suffix = f" · {extra_note}" if extra_note else ""
+    if executable:
+        targets.append({
+            "target_id": f"{source}-session",
+            "kind": "server_launch",
+            "capability": "session",
+            "label": f"打开这条 {title} 会话",
+            "exact": True,
+            "note": f"启动本机 {executable.name} --resume，精确打开这条会话{suffix}",
+        })
+    command = (
+        f"{_cli_quote(executable)} --resume {session_id}"
+        if executable
+        else f"{command_name} --resume {session_id}"
+    )
+    targets.append({
+        "target_id": f"{source}-resume-command",
+        "kind": "copy_command",
+        "capability": "command",
+        "label": f"复制 {title} 恢复命令",
+        "value": command,
+        "exact": True,
+        "note": (
+            f"可在本机终端粘贴执行{suffix}"
+            if executable
+            else f"本机未找到 {command_name}。安装后，或设置 CONVERSATION_HUB_{source.upper()}_EXE{suffix}"
+        ),
+    })
+    if executable:
+        targets.append(_cli_new_target(source, title, executable))
+    return targets
+
+
+def _cli_new_target(source: str, title: str, executable: Path) -> dict[str, Any]:
+    return {
+        "target_id": f"{source}-new",
+        "kind": "server_launch",
+        "capability": "client",
+        "label": f"新开 {title} 聊天",
+        "exact": False,
+        "note": f"启动本机 {executable.name}，开始一条新对话，不打开旧会话",
+    }
+
+
+CLIENT_OPEN = {
+    "hermes": ("Hermes", "hermes://"),
+    "claude": ("Claude Code", "claude://"),
+    "workbuddy": ("WorkBuddy", "workbuddy://"),
+    "cursor": ("Cursor", "cursor://"),
+    "qoder": ("Qoder", "qoder://"),
+    "qclaw": ("QClaw", "qclaw://"),
+}
+
+
+def protocol_has_open_command(scheme: str) -> bool:
+    """True when this computer registered a URL protocol with an open command."""
+    if os.name != "nt":
+        return False
+    try:
+        import winreg  # type: ignore
+    except ImportError:
+        return False
+    subkey = rf"Software\Classes\{scheme}\shell\open\command"
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                value, _ = winreg.QueryValueEx(key, None)
+        except OSError:
+            continue
+        if str(value or "").strip():
+            return True
+    return False
+
+
+def client_open_target(source: str) -> dict[str, Any] | None:
+    info = CLIENT_OPEN.get(source)
+    if not info:
+        return None
+    title, href = info
+    return {
+        "source": source,
+        "target_id": f"{source}-app",
+        "kind": "app_link",
+        "capability": "client",
+        "label": f"打开 {title}",
+        "href": href,
+        "exact": False,
+        "note": f"打开 {title} 客户端，不能精确到会话",
+    }
+
+
+def starter_target(source: str) -> dict[str, Any] | None:
+    """New-chat or open-client control. Not an exact session resume."""
+    if source == "grok" and (discover_grok_launcher() or discover_grok_executable()):
+        return {
+            "source": "grok",
+            "target_id": "grok-new",
+            "kind": "server_launch",
+            "capability": "client",
+            "label": "新开 Grok Build 聊天",
+            "exact": False,
+            "note": "用本机双击同一套方式启动 Grok，开始一条新对话",
+        }
+    if source == "claude" and discover_claude_executable():
+        return {
+            "source": "claude",
+            "target_id": "claude-new",
+            "kind": "server_launch",
+            "capability": "client",
+            "label": "新开 Claude Code 聊天",
+            "exact": False,
+            "note": "在本机终端打开 claude，开始一条新对话",
+        }
+    if source == "codex" and discover_codex_executable():
+        return {
+            "source": "codex",
+            "target_id": "codex-new",
+            "kind": "server_launch",
+            "capability": "client",
+            "label": "新开 Codex 聊天",
+            "exact": False,
+            "note": "在本机终端打开 Codex CLI，开始一条新对话",
+        }
+    if source == "zcode" and discover_zcode_executable():
+        return {
+            "source": "zcode",
+            "target_id": "zcode-app",
+            "kind": "server_launch",
+            "capability": "client",
+            "label": "打开 ZCode",
+            "exact": False,
+            "note": "打开 ZCode 客户端",
+        }
+    if source in CLIENT_OPEN and protocol_has_open_command(source):
+        target = client_open_target(source)
+        if target:
+            target["label"] = f"打开 {CLIENT_OPEN[source][0]}"
+        return target
+    return None
+
+
+def _with_starter(targets: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
+    starter = starter_target(source)
+    if not starter:
+        return targets
+    if any(str(row.get("target_id") or "") == starter["target_id"] for row in targets):
+        return targets
+    return [*targets, starter]
+
+
+def new_session_targets() -> list[dict[str, Any]]:
+    """Starters for the selected source. Not shown inside the source list."""
+    result: list[dict[str, Any]] = []
+    for source in (
+        "grok", "claude", "codex", "hermes", "workbuddy",
+        "cursor", "qoder", "qclaw", "zcode",
+    ):
+        target = starter_target(source)
+        if target:
+            result.append(target)
+    return result
+
+
+def _cli_quote(path: Path | str) -> str:
+    text = str(path)
+    if os.name == "nt":
+        if any(ch.isspace() or ch in {'"', "&", "^"} for ch in text):
+            return '"' + text.replace('"', r"\"") + '"'
+        return text
+    return shlex.quote(text)
+
+
+def discover_cli_executable(
+    names: tuple[str, ...],
+    *,
+    env_name: str,
+    configured: str = "",
+) -> Path | None:
+    """Find a CLI on this computer: override, common user bins, then PATH."""
+    allowed = {name.casefold() for name in names}
+    candidates: list[Path] = []
+    for raw in (os.environ.get(env_name), configured):
+        text = str(raw or "").strip()
+        if text:
+            candidates.append(Path(text).expanduser())
+    local_app = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    for folder in (Path.home() / ".local" / "bin", local_app / "Programs"):
+        for name in names:
+            candidates.append(folder / name)
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        key = str(resolved).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if resolved.is_file() and resolved.name.casefold() in allowed:
+                return resolved
+        except OSError:
+            continue
+    for name in names:
+        found = shutil.which(name)
+        if not found:
+            continue
+        path = Path(found)
+        try:
+            if path.suffix.casefold() in {".cmd", ".bat"}:
+                continue
+            if path.is_file() and path.name.casefold() in allowed:
+                return path.resolve()
+        except OSError:
+            continue
+    return None
+
+
+def _cli_names(*unix_names: str) -> tuple[str, ...]:
+    names: list[str] = []
+    for name in unix_names:
+        if os.name == "nt":
+            names.append(f"{name}.exe")
+        names.append(name)
+    return tuple(names)
+
+
+def discover_hermes_executable() -> Path | None:
+    return discover_cli_executable(
+        _cli_names("hermes"),
+        env_name="CONVERSATION_HUB_HERMES_EXE",
+        configured=str(load_source_config().get("hermes_exe") or ""),
+    )
+
+
+def discover_claude_executable() -> Path | None:
+    return discover_cli_executable(
+        _cli_names("claude"),
+        env_name="CONVERSATION_HUB_CLAUDE_EXE",
+        configured=str(load_source_config().get("claude_exe") or ""),
+    )
+
+
+def discover_codex_executable() -> Path | None:
+    """Find this machine's Codex CLI without assuming one install layout."""
+    names = _cli_names("codex")
+    settings = load_source_config().get("extra_sources")
+    extra = settings.get("codex") if isinstance(settings, dict) else None
+    extra = extra if isinstance(extra, dict) else {}
+    candidates: list[Path] = []
+    for raw in (
+        os.environ.get("CONVERSATION_HUB_CODEX_EXE"),
+        extra.get("executable") or extra.get("exe"),
+    ):
+        text = str(raw or "").strip()
+        if text:
+            candidates.append(Path(text).expanduser())
+    home = Path.home()
+    for folder in (
+        home / ".codex" / "bin",
+        home / ".codex" / ".sandbox-bin",
+        home / ".local" / "bin",
+    ):
+        for name in names:
+            candidates.append(folder / name)
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        key = str(resolved).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if resolved.is_file() and resolved.name.casefold() in {name.casefold() for name in names}:
+                return resolved
+        except OSError:
+            continue
+    found = shutil.which("codex")
+    if found:
+        path = Path(found)
+        if path.suffix.casefold() not in {".cmd", ".bat"} and path.is_file():
+            return path.resolve()
+    return None
+
+
+def discover_grok_executable(config: dict[str, Any] | None = None) -> Path | None:
+    """Find this machine's Grok CLI without assuming a single install layout.
+
+    Order: env override, sources.json, $GROK_HOME/bin, ~/.grok/bin.
+    PATH is last and only used when those official locations are missing,
+    so a leftover older grok.exe on PATH cannot win.
+    """
+    names = _grok_binary_names()
+    settings = config if config is not None else _grok_user_settings()
+    candidates: list[Path] = []
+    for raw in (
+        os.environ.get("CONVERSATION_HUB_GROK_EXE"),
+        settings.get("executable") or settings.get("exe"),
+    ):
+        text = str(raw or "").strip()
+        if text:
+            candidates.append(Path(text).expanduser())
+    grok_home = Path(
+        str(os.environ.get("GROK_HOME") or settings.get("path") or (Path.home() / ".grok"))
+    ).expanduser()
+    default_home = Path.home() / ".grok"
+    for root in (grok_home, default_home):
+        for name in names:
+            candidates.append(root / "bin" / name)
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        key = str(resolved).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        if _is_grok_binary(resolved):
+            return resolved
+    for name in names:
+        found = shutil.which(name)
+        if not found:
+            continue
+        path = Path(found)
+        if _is_grok_binary(path):
+            return path.resolve()
+    return None
+
+
+def discover_grok_launcher(config: dict[str, Any] | None = None) -> Path | None:
+    """Use this computer's own double-click launcher when one already exists."""
+    settings = config if config is not None else _grok_user_settings()
+    candidates: list[Path] = []
+    for raw in (
+        os.environ.get("CONVERSATION_HUB_GROK_LAUNCHER"),
+        settings.get("launcher"),
+    ):
+        text = str(raw or "").strip()
+        if text:
+            candidates.append(Path(text).expanduser())
+    grok_home = Path(
+        str(os.environ.get("GROK_HOME") or settings.get("path") or (Path.home() / ".grok"))
+    ).expanduser()
+    for root in (grok_home, Path.home() / ".grok"):
+        candidates.append(root / "launch-grok-build.cmd")
+        candidates.append(root / "launch-grok.cmd")
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        key = str(resolved).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if resolved.is_file() and resolved.suffix.casefold() in {".cmd", ".bat"}:
+                return resolved
+        except OSError:
+            continue
+    return None
+
+
+def discover_grok_shortcut() -> Path | None:
+    """Desktop shortcut created for double-click. Not a hardcoded user path."""
+    names = ("Grok Build.lnk",)
+    home = Path.home()
+    profile = Path(os.environ.get("USERPROFILE") or home)
+    folders = (
+        home / "Desktop",
+        home / "OneDrive" / "Desktop",
+        profile / "Desktop",
+        profile / "OneDrive" / "Desktop",
+    )
+    seen: set[str] = set()
+    for folder in folders:
+        for name in names:
+            candidate = folder / name
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            key = str(resolved).casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if resolved.is_file():
+                    return resolved
+            except OSError:
+                continue
+    return None
+
+
+def launch_grok_cli(*, extra_args: list[str], cwd: str) -> Any:
+    """Start Grok the same way a working local double-click launcher does."""
+    problem = grok_launch_preflight()
+    if problem:
+        raise ValueError(problem)
+    if not extra_args:
+        shortcut = discover_grok_shortcut()
+        if shortcut:
+            return _windows_explorer_start(shortcut, [], str(Path.home()))
+    launcher = discover_grok_launcher()
+    if launcher:
+        return _windows_explorer_start(launcher, extra_args, cwd)
+    executable = discover_grok_executable()
+    if not executable:
+        raise ValueError("本机未找到 Grok CLI，无法打开")
+    return _popen_detached(
+        [str(executable), *extra_args],
+        cwd=cwd,
+        env=_with_cli_on_path(grok_launch_env(), executable),
+    )
+
+
+def launch_terminal_cli(executable: Path, extra_args: list[str], cwd: str) -> Any:
+    """Open a console CLI in a fresh Explorer-style window (not the hub's console)."""
+    return _windows_explorer_start(executable, extra_args, cwd)
+
+
+def _tcp_open(host: str, port: int, timeout: float = 0.2) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _windows_user_env_values(*names: str) -> list[str]:
+    if os.name != "nt":
+        return []
+    values: list[str] = []
+    try:
+        import winreg  # type: ignore
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as key:
+            for name in names:
+                try:
+                    raw, _ = winreg.QueryValueEx(key, name)
+                except OSError:
+                    continue
+                text = str(raw or "").strip()
+                if text:
+                    values.append(text)
+    except (ImportError, OSError):
+        return values
+    return values
+
+
+def _is_localhost_http_proxy(url: str) -> bool:
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    host = str(parsed.hostname or "").casefold()
+    return parsed.scheme in {"http", "https"} and host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _localhost_listen_url(url: str) -> str:
+    """Keep this computer's own proxy URL if the localhost port is live.
+
+    HTTP, HTTPS, and SOCKS schemes are accepted. The port is never invented.
+    """
+    text = str(url or "").strip()
+    parsed = urllib.parse.urlsplit(text)
+    host = str(parsed.hostname or "").casefold()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return ""
+    if parsed.scheme not in {"http", "https", "socks5", "socks4", "socks"}:
+        return ""
+    connect_host = "127.0.0.1" if host in {"localhost", "127.0.0.1"} else host
+    if parsed.port:
+        port = int(parsed.port)
+    elif parsed.scheme == "https":
+        port = 443
+    elif parsed.scheme in {"http"}:
+        port = 80
+    else:
+        return ""
+    if not _tcp_open(connect_host, port):
+        return ""
+    return text
+
+
+def _usable_local_proxy_url(url: str) -> str:
+    if not _is_localhost_http_proxy(url):
+        return ""
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    host = str(parsed.hostname or "").casefold()
+    connect_host = "127.0.0.1" if host in {"localhost", "127.0.0.1"} else host
+    port = int(parsed.port or (443 if parsed.scheme == "https" else 80))
+    if not _tcp_open(connect_host, port):
+        return ""
+    return f"{parsed.scheme}://{connect_host}:{port}"
+
+
+def grok_declared_proxies(
+    base: dict[str, str] | None = None,
+    config: dict[str, Any] | None = None,
+) -> list[str]:
+    """Localhost HTTP proxies this computer already declared. Never invent a port."""
+    env = base if base is not None else os.environ
+    settings = config if config is not None else _grok_user_settings()
+    declared = [
+        env.get("CONVERSATION_HUB_GROK_PROXY"),
+        settings.get("proxy"),
+        env.get("HTTPS_PROXY"),
+        env.get("HTTP_PROXY"),
+        env.get("https_proxy"),
+        env.get("http_proxy"),
+    ]
+    if base is None:
+        declared.extend(_windows_user_env_values("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"))
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in declared:
+        text = str(raw or "").strip()
+        if not text or not _is_localhost_http_proxy(text) or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def grok_launch_preflight(
+    base: dict[str, str] | None = None,
+    config: dict[str, Any] | None = None,
+) -> str:
+    """Fail fast when this machine's own proxy is configured but down."""
+    declared = grok_declared_proxies(base, config)
+    if declared and not any(_usable_local_proxy_url(item) for item in declared):
+        return (
+            "本机配置了本地代理，但现在没在听。Grok 直连常会卡 30 秒。"
+            "请先打开本机代理，或改 HTTP_PROXY / extra_sources.grok.proxy"
+        )
+    return ""
+
+
+def grok_launch_env(
+    base: dict[str, str] | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Pass through this computer's own live localhost proxy. Never invent a port."""
+    env = dict(base if base is not None else os.environ)
+    http_proxy = ""
+    for raw in grok_declared_proxies(base, config):
+        http_proxy = _usable_local_proxy_url(raw)
+        if http_proxy:
+            break
+    all_candidates = [env.get("ALL_PROXY"), env.get("all_proxy")]
+    if base is None:
+        all_candidates.extend(_windows_user_env_values("ALL_PROXY"))
+    all_proxy = ""
+    for raw in all_candidates:
+        all_proxy = _localhost_listen_url(str(raw or ""))
+        if all_proxy:
+            break
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+        current = str(env.get(key) or "").strip()
+        if current and not _localhost_listen_url(current) and not _usable_local_proxy_url(current):
+            env.pop(key, None)
+    if http_proxy:
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            env[key] = http_proxy
+        env.setdefault("NO_PROXY", "127.0.0.1,localhost,::1")
+        env.setdefault("no_proxy", env["NO_PROXY"])
+    if all_proxy:
+        env["ALL_PROXY"] = all_proxy
+        env["all_proxy"] = all_proxy
+    elif http_proxy:
+        env["ALL_PROXY"] = http_proxy
+        env["all_proxy"] = http_proxy
+    return env
+
+
+def _with_cli_on_path(env: dict[str, str], executable: Path) -> dict[str, str]:
+    updated = dict(env)
+    bin_dir = str(executable.parent)
+    path = updated.get("PATH") or os.environ.get("PATH") or ""
+    parts = [part for part in path.split(os.pathsep) if part]
+    if all(part.casefold() != bin_dir.casefold() for part in parts):
+        updated["PATH"] = os.pathsep.join([bin_dir, *parts])
+    return updated
+
+
+CREATE_NEW_CONSOLE = 0x00000010
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+class _LaunchedProcess:
+    def __init__(self, pid: int) -> None:
+        self.pid = int(pid)
+
+
+def _windows_in_job() -> bool:
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        flag = ctypes.c_int()
+        if not kernel32.IsProcessInJob(kernel32.GetCurrentProcess(), None, ctypes.byref(flag)):
+            return False
+        return bool(flag.value)
+    except (AttributeError, OSError, ValueError, TypeError):
+        return False
+
+
+LAUNCH_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+)
+
+
+def _windows_cmd_k_line(command: list[str], env: dict[str, str] | None = None) -> str:
+    parts: list[str] = []
+    if env is not None:
+        for key in LAUNCH_ENV_KEYS:
+            value = str(env.get(key) or "")
+            # Quoted `set "KEY=value"` so cmd.exe does not keep the space before "&".
+            if value:
+                parts.append(f'set "{key}={value}"')
+            elif os.environ.get(key):
+                parts.append(f'set "{key}="')
+    parts.append(subprocess.list2cmdline(command))
+    return "&".join(parts)
+
+
+def _wmi_create_process(command_line: str, cwd: str) -> int:
+    payload = json.dumps({"cmd": command_line, "cwd": cwd}, ensure_ascii=False)
+    script = (
+        "$p = ConvertFrom-Json ([Console]::In.ReadToEnd()); "
+        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments "
+        "@{ CommandLine = [string]$p.cmd; CurrentDirectory = [string]$p.cwd }; "
+        "if ($r.ReturnValue -ne 0) { throw \"Win32_Process.Create $($r.ReturnValue)\" }; "
+        "$r.ProcessId"
+    )
+    completed = subprocess.run(  # noqa: S603 - fixed PowerShell, payload on stdin
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        input=payload,
+        capture_output=True,
+        text=True,
+        timeout=8,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip() or f"exit {completed.returncode}"
+        raise OSError(detail)
+    return int((completed.stdout or "").strip())
+
+
+def _windows_explorer_start(
+    target: Path | str,
+    extra_args: list[str] | None = None,
+    cwd: str = "",
+) -> _LaunchedProcess:
+    """Open like Explorer double-click: `cmd /c start "" /D cwd target args`.
+
+    This uses the same console host as a desktop shortcut, so TUI colors match.
+    """
+    if os.name != "nt":
+        raise OSError("当前系统不支持这种打开方式")
+    path = Path(target)
+    directory = str(cwd or Path.home())
+    command = [
+        os.environ.get("COMSPEC") or "cmd.exe",
+        "/d",
+        "/c",
+        "start",
+        "",
+        "/D",
+        directory,
+        str(path),
+        *(extra_args or []),
+    ]
+    if _windows_in_job():
+        return _LaunchedProcess(_wmi_create_process(subprocess.list2cmdline(command), directory))
+    flags = CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
+    try:
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            cwd=directory,
+            shell=False,
+            close_fds=True,
+            creationflags=flags,
+        )
+    except OSError:
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            cwd=directory,
+            shell=False,
+            close_fds=True,
+            creationflags=CREATE_NEW_PROCESS_GROUP,
+        )
+    return _LaunchedProcess(int(process.pid or 0))
+
+
+def _windows_shell_open(target: str, arguments: str = "", cwd: str = "") -> None:
+    """Open a file or URL like Explorer / 双击, so the default terminal is used.
+
+    CreateProcess + CREATE_NEW_CONSOLE forces the legacy console and washes out
+    TUI colors. ShellExecute follows this computer's default terminal app.
+    """
+    if os.name != "nt":
+        raise OSError("当前系统不支持这种打开方式")
+    path = str(target or "")
+    params = str(arguments or "")
+    directory = str(cwd or "") or None
+    try:
+        os.startfile(path, "open", params, directory)  # type: ignore[call-arg,arg-type]
+        return
+    except TypeError:
+        if params:
+            raise OSError("当前 Python 无法给 ShellExecute 传参数") from None
+        os.startfile(path)
+        return
+    except OSError:
+        rc = int(ctypes.windll.shell32.ShellExecuteW(None, "open", path, params or None, directory, 1))
+        if rc <= 32:
+            raise OSError(f"无法打开 {path}（{rc}）")
+        return
+
+
+def _popen_detached(command: list[str], *, cwd: str, env: dict[str, str] | None = None) -> Any:
+    if os.name != "nt":
+        return subprocess.Popen(  # noqa: S603 - caller supplies an allow-listed executable
+            command,
+            cwd=cwd,
+            shell=False,
+            close_fds=True,
+            env=env,
+            start_new_session=True,
+        )
+    flags = CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
+    if not _windows_in_job():
+        try:
+            return subprocess.Popen(  # noqa: S603 - caller supplies an allow-listed executable
+                command,
+                cwd=cwd,
+                shell=False,
+                close_fds=False,
+                env=env,
+                creationflags=flags,
+            )
+        except OSError:
+            return subprocess.Popen(  # noqa: S603
+                command,
+                cwd=cwd,
+                shell=False,
+                close_fds=False,
+                env=env,
+                creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
+            )
+    comspec = os.environ.get("COMSPEC") or "cmd.exe"
+    console_line = _windows_cmd_k_line(command, env)
+    wrapped = [comspec, "/d", "/k", console_line]
+    return _LaunchedProcess(_wmi_create_process(subprocess.list2cmdline(wrapped), cwd))
+
+
 def launch_server_target(item: Conversation, target_id: str) -> dict[str, Any]:
     """Execute one recomputed, allow-listed local GUI launch target."""
+    if item.source in CLIENT_OPEN and target_id in {
+        f"{item.source}-new",
+        f"{item.source}-app",
+        f"{item.source}-client",
+        f"{item.source}-session",
+    }:
+        return open_registered_client(item.source)
+    if item.source == "zcode" and target_id == "zcode-app":
+        return launch_zcode_app()
     allowed = {
         str(target.get("target_id")): target
         for target in launch_targets_for(item)
@@ -1700,27 +2824,163 @@ def launch_server_target(item: Conversation, target_id: str) -> dict[str, Any]:
     target = allowed.get(str(target_id or ""))
     if not target:
         raise ValueError("该启动目标无效或已失效，请刷新后重试")
-    if item.source != "zcode" or target_id != "zcode-workspace":
-        raise ValueError("该来源没有可执行的安全启动器")
-    workspace = Path(str(item.cwd or "")).expanduser()
-    if not workspace.is_dir():
-        raise ValueError("ZCode 工作区不存在，无法安全打开")
+    if item.source == "zcode" and target_id == "zcode-workspace":
+        workspace = Path(str(item.cwd or "")).expanduser()
+        if not workspace.is_dir():
+            raise ValueError("ZCode 工作区不存在，无法安全打开")
+        executable = discover_zcode_executable()
+        if not executable:
+            raise ValueError("未找到可信的 ZCode.exe；请确认 ZCode 已安装")
+        try:
+            process = _popen_detached(
+                [str(executable), "--open-workspace", str(workspace.resolve())],
+                cwd=str(workspace.resolve()),
+            )
+        except OSError as exc:
+            raise ValueError(f"ZCode 启动失败：{exc}") from exc
+        return {
+            "ok": True,
+            "target_id": target_id,
+            "label": target["label"],
+            "exact": False,
+            "pid": int(process.pid),
+        }
+    if item.source == "grok" and target_id == "grok-new":
+        return launch_new_cli("grok")
+    if item.source == "claude" and target_id in {"claude-new", "claude-session"}:
+        return launch_claude_cli(item, target_id)
+    if item.source == "codex" and target_id == "codex-new":
+        return launch_codex_cli()
+    if item.source == "grok" and target_id == "grok-session":
+        session_id = str(item.id or "")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{6,240}", session_id):
+            raise ValueError("会话 ID 不安全，已拒绝启动")
+        workspace = Path(str(item.cwd or "")).expanduser()
+        cwd = str(workspace.resolve()) if workspace.is_dir() else str(Path.home())
+        try:
+            process = launch_grok_cli(extra_args=["--resume", session_id], cwd=cwd)
+        except OSError as exc:
+            raise ValueError(f"grok 启动失败：{exc}") from exc
+        return {
+            "ok": True,
+            "target_id": target_id,
+            "label": target["label"],
+            "exact": True,
+            "pid": int(process.pid),
+        }
+    raise ValueError("该来源没有可执行的安全启动器")
+
+
+def open_registered_client(source: str) -> dict[str, Any]:
+    target = client_open_target(source)
+    if not target:
+        raise ValueError("该来源没有可验证的客户端入口")
+    if not protocol_has_open_command(source):
+        raise ValueError(f"本机未注册 {source}://，无法打开客户端")
+    try:
+        _windows_shell_open(str(target["href"]))
+    except OSError as exc:
+        raise ValueError(f"{target['label']} 失败：{exc}") from exc
+    return {
+        "ok": True,
+        "target_id": str(target["target_id"]),
+        "label": str(target["label"]),
+        "exact": False,
+        "pid": 0,
+    }
+
+
+def launch_zcode_app() -> dict[str, Any]:
     executable = discover_zcode_executable()
     if not executable:
         raise ValueError("未找到可信的 ZCode.exe；请确认 ZCode 已安装")
     try:
-        process = subprocess.Popen(  # noqa: S603 - exact executable and fixed argument grammar
-            [str(executable), "--open-workspace", str(workspace.resolve())],
-            cwd=str(workspace.resolve()),
-            shell=False,
-            close_fds=True,
-        )
+        _windows_shell_open(str(executable), "", str(Path.home()))
     except OSError as exc:
         raise ValueError(f"ZCode 启动失败：{exc}") from exc
     return {
         "ok": True,
+        "target_id": "zcode-app",
+        "label": "打开 ZCode",
+        "exact": False,
+        "pid": 0,
+    }
+
+
+def launch_new_cli(source: str) -> dict[str, Any]:
+    """Open a fresh chat for CLI agents, or the desktop client otherwise."""
+    if source == "grok":
+        if not discover_grok_launcher() and not discover_grok_executable():
+            raise ValueError("本机未找到 Grok CLI，无法新开聊天")
+        try:
+            process = launch_grok_cli(extra_args=[], cwd=str(Path.home()))
+        except OSError as exc:
+            raise ValueError(f"grok 启动失败：{exc}") from exc
+        return {
+            "ok": True,
+            "target_id": "grok-new",
+            "label": "新开 Grok Build 聊天",
+            "exact": False,
+            "pid": int(process.pid),
+        }
+    if source == "claude":
+        return launch_claude_cli(None, "claude-new")
+    if source == "codex":
+        return launch_codex_cli()
+    if source in CLIENT_OPEN:
+        return open_registered_client(source)
+    if source == "zcode":
+        return launch_zcode_app()
+    raise ValueError("该来源没有可验证的新开聊天方式")
+
+
+def launch_claude_cli(item: Conversation | None, target_id: str) -> dict[str, Any]:
+    executable = discover_claude_executable()
+    if not executable:
+        raise ValueError("本机未找到 Claude CLI，无法打开终端")
+    extra: list[str] = []
+    exact = False
+    label = "新开 Claude Code 聊天"
+    cwd = str(Path.home())
+    if target_id == "claude-session":
+        if item is None:
+            raise ValueError("找不到对应对话")
+        session_id = str(item.id or "")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{6,240}", session_id):
+            raise ValueError("会话 ID 不安全，已拒绝启动")
+        if not claude_transcript_available(item):
+            raise ValueError("本机没有这条 Claude 会话的正文文件，无法 --resume")
+        extra = ["--resume", session_id]
+        exact = True
+        label = "继续 Claude Code 会话"
+        workspace = Path(str(item.cwd or "")).expanduser()
+        if workspace.is_dir():
+            cwd = str(workspace.resolve())
+    try:
+        process = launch_terminal_cli(executable, extra, cwd)
+    except OSError as exc:
+        raise ValueError(f"Claude 启动失败：{exc}") from exc
+    return {
+        "ok": True,
         "target_id": target_id,
-        "label": target["label"],
+        "label": label,
+        "exact": exact,
+        "pid": int(process.pid),
+    }
+
+
+def launch_codex_cli() -> dict[str, Any]:
+    executable = discover_codex_executable()
+    if not executable:
+        raise ValueError("本机未找到 Codex CLI，无法新开聊天")
+    try:
+        process = launch_terminal_cli(executable, [], str(Path.home()))
+    except OSError as exc:
+        raise ValueError(f"Codex 启动失败：{exc}") from exc
+    return {
+        "ok": True,
+        "target_id": "codex-new",
+        "label": "新开 Codex 聊天",
         "exact": False,
         "pid": int(process.pid),
     }
@@ -2455,6 +3715,7 @@ class ConversationIndex:
                 self._refresh_codex_search([item for item in items if item.source == "codex"])
             if source_is_enabled("workbuddy"):
                 self._refresh_workbuddy_search([item for item in items if item.source == "workbuddy"])
+            self._apply_indexed_message_counts(items)
             note_map = self._load_notes()
             for item in items:
                 saved = note_map.get((item.source, item.id))
@@ -2497,13 +3758,33 @@ class ConversationIndex:
         """
         return
 
+    def _apply_indexed_message_counts(self, items: list[Conversation]) -> None:
+        """Fill list counts from the search index when a source does not publish them."""
+        try:
+            with notes_db() as conn:
+                counts = {
+                    (str(row["source"]), str(row["conversation_id"])): int(row["message_count"] or 0)
+                    for row in conn.execute(
+                        "SELECT source,conversation_id,message_count FROM conversation_search_meta"
+                    )
+                }
+        except sqlite3.DatabaseError:
+            return
+        for item in items:
+            counted = counts.get((item.source, item.id))
+            if counted and not item.message_count:
+                item.message_count = counted
+
     def _refresh_codex_search(self, items: list[Conversation]) -> None:
         current_ids = {item.id for item in items}
         with notes_db() as conn:
-            known = {
-                row["conversation_id"]: row["signature"]
-                for row in conn.execute("SELECT conversation_id,signature FROM codex_search_meta")
-            }
+            known: dict[str, dict[str, Any]] = {}
+            for row in conn.execute("SELECT * FROM codex_search_meta"):
+                keys = set(row.keys())
+                known[str(row["conversation_id"])] = {
+                    "signature": str(row["signature"]),
+                    "message_count": int(row["message_count"] or 0) if "message_count" in keys else 0,
+                }
             for stale_id in set(known) - current_ids:
                 conn.execute("DELETE FROM codex_search WHERE conversation_id=?", (stale_id,))
                 conn.execute("DELETE FROM codex_search_meta WHERE conversation_id=?", (stale_id,))
@@ -2512,10 +3793,15 @@ class ConversationIndex:
                 if not item.rollout_path or not path.exists():
                     continue
                 stat = path.stat()
-                signature = f"safe-v2:{stat.st_size}:{stat.st_mtime_ns}"
-                if known.get(item.id) == signature:
+                signature = f"safe-v3:{stat.st_size}:{stat.st_mtime_ns}"
+                previous = known.get(item.id)
+                if previous and previous["signature"] == signature:
+                    if previous["message_count"] and not item.message_count:
+                        item.message_count = previous["message_count"]
                     continue
-                content = self._codex_search_text(path)
+                messages = iter_codex_visible_messages(path)
+                item.message_count = len(messages)
+                content = self._codex_search_text(path, messages)
                 conn.execute("DELETE FROM codex_search WHERE conversation_id=?", (item.id,))
                 conn.execute(
                     "INSERT INTO codex_search(conversation_id,content) VALUES(?,?)",
@@ -2523,12 +3809,13 @@ class ConversationIndex:
                 )
                 conn.execute(
                     """
-                    INSERT INTO codex_search_meta(conversation_id,signature,indexed_at)
-                    VALUES(?,?,?)
+                    INSERT INTO codex_search_meta(conversation_id,signature,indexed_at,message_count)
+                    VALUES(?,?,?,?)
                     ON CONFLICT(conversation_id) DO UPDATE SET
-                      signature=excluded.signature,indexed_at=excluded.indexed_at
+                      signature=excluded.signature,indexed_at=excluded.indexed_at,
+                      message_count=excluded.message_count
                     """,
-                    (item.id, signature, time.time()),
+                    (item.id, signature, time.time(), item.message_count),
                 )
             conn.commit()
 
@@ -2577,6 +3864,7 @@ class ConversationIndex:
                 return
             try:
                 self._refresh_persistent_search(items, signature)
+                self._apply_indexed_message_counts(items)
                 self._sync_conversation_relations()
             except Exception as exc:  # pragma: no cover - defensive background path
                 try:
@@ -2653,6 +3941,7 @@ class ConversationIndex:
                 item_signature = hashlib.sha256(
                     "|".join(
                         [
+                            SEARCH_CONTENT_VERSION,
                             item.source,
                             item.id,
                             f"{item.updated_at:.6f}",
@@ -2972,41 +4261,22 @@ class ConversationIndex:
         except sqlite3.DatabaseError:
             return {}
 
-    def _codex_search_text(self, path: Path) -> str:
+    def _codex_search_text(
+        self,
+        path: Path,
+        messages: list[dict[str, Any]] | None = None,
+    ) -> str:
         parts: list[str] = []
         size = 0
-        try:
-            with path.open("r", encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if event.get("type") != "response_item":
-                        continue
-                    payload = event.get("payload") or {}
-                    if payload.get("type") != "message" or payload.get("role") not in {"user", "assistant"}:
-                        continue
-                    message_parts: list[str] = []
-                    for part in payload.get("content") or []:
-                        if part.get("type") not in {"input_text", "output_text"} or not part.get("text"):
-                            continue
-                        message_parts.append(str(part["text"]))
-                    text = sanitize_daily_text(
-                        "\n".join(message_parts),
-                        str(payload.get("role") or ""),
-                        20000,
-                    )
-                    if not text:
-                        continue
-                    remaining = 2_000_000 - size
-                    if remaining <= 0:
-                        return "\n".join(parts)
-                    text = text[:remaining]
-                    parts.append(text)
-                    size += len(text)
-        except OSError:
-            return ""
+        for message in messages if messages is not None else iter_codex_visible_messages(path):
+            text = sanitize_daily_text(message["text"], message["role"], 20000)
+            if not text:
+                continue
+            remaining = 2_000_000 - size
+            if remaining <= 0:
+                break
+            parts.append(text[:remaining])
+            size += len(text[:remaining])
         return "\n".join(parts)
 
     def _workbuddy_text_parts(self, event: dict[str, Any]) -> list[str]:
@@ -3483,13 +4753,22 @@ class ConversationIndex:
             item = self._by_key.get((source, conversation_id))
         if not item:
             return None
-        messages = self._messages_for_item(item, limit=40)
-        first_user = item.preview if source == "workbuddy" else next(
-            (m["text"] for m in messages if m["role"] == "user"),
-            item.preview,
+        messages = self._messages_for_item(item, limit=50, include_internal=True)
+        visible = [message for message in messages if message.get("visibility") == "visible"]
+        opening = item.preview or next((m["text"] for m in visible if m["role"] == "user"), "")
+        latest_user = next((m["text"] for m in reversed(visible) if m["role"] == "user"), "")
+        assistant_visible = [m["text"] for m in visible if m["role"] == "assistant"]
+        latest_assistant = next(
+            (
+                text
+                for text in reversed(assistant_visible)
+                if any(marker in text for marker in ASSISTANT_USER_FACING_MARKERS) or len(text) > 180
+            ),
+            assistant_visible[-1] if assistant_visible else "",
         )
-        latest_user = next((m["text"] for m in reversed(messages) if m["role"] == "user"), "")
-        latest_assistant = next((m["text"] for m in reversed(messages) if m["role"] == "assistant"), "")
+        opening_line = overview_snippet(opening, 160)
+        request_line = overview_snippet(latest_user, 160)
+        response_line = overview_snippet(latest_assistant, 200)
         with notes_db() as conn:
             try:
                 assignment = conn.execute(
@@ -3545,7 +4824,7 @@ class ConversationIndex:
                 )
         return {
             "conversation": asdict(item),
-            "messages": messages[-16:],
+            "messages": messages,
             "launch_targets": launch_targets_for(item),
             "continuation_memory": {
                 "body": str(memory_row["body"] or "") if memory_row else "",
@@ -3554,10 +4833,12 @@ class ConversationIndex:
             "project_assignment": dict(assignment) if assignment else None,
             "related_conversations": related,
             "overview": {
-                "goal": clean_text(first_user, 700),
-                "latest_request": clean_text(latest_user, 700),
-                "latest_response": clean_text(latest_assistant, 900),
+                "goal": opening_line,
+                "latest_request": request_line,
+                "latest_response": response_line,
+                "opening_is_latest": overview_same_line(opening_line, request_line),
             },
+            "hidden_message_count": sum(1 for message in messages if message.get("visibility") != "visible"),
         }
 
     def conversation_messages(
@@ -3570,13 +4851,14 @@ class ConversationIndex:
             item = self._by_key.get((source, conversation_id))
         if not item:
             return None
-        safe_limit = min(500, max(40, int(limit)))
-        messages = self._messages_for_item(item, limit=safe_limit)
+        safe_limit = min(240, max(40, int(limit)))
+        messages = self._messages_for_item(item, limit=safe_limit, include_internal=True)
         return {
             "source": source,
             "conversation_id": conversation_id,
             "messages": messages,
             "returned": len(messages),
+            "hidden_message_count": sum(1 for message in messages if message.get("visibility") != "visible"),
             "estimated_total": int(item.message_count or len(messages)),
             "truncated": int(item.message_count or 0) > len(messages),
         }
@@ -3606,9 +4888,20 @@ class ConversationIndex:
             memory_body=memory_body,
             include_memory=include_memory,
         )
+        overview = {
+            "goal": ((packet.get("current_state") or {}).get("goal") or {}).get("text") or "",
+            "latest_request": ((packet.get("current_state") or {}).get("latest_request") or {}).get("text") or "",
+            "latest_response": ((packet.get("current_state") or {}).get("latest_response") or {}).get("text") or "",
+        }
+        handoff = build_agent_handoff(item, overview)
+        handoff["memory_card"] = {
+            "included": bool(include_memory and memory_body),
+            "body": memory_body if include_memory else "",
+        }
         return {
             "ok": True,
             "packet": packet,
+            "handoff": handoff,
             "markdown": continuation_packet_markdown(packet),
             "memory_card": {
                 "body": memory_body,
@@ -3675,6 +4968,20 @@ class ConversationIndex:
         source = clean_text(payload.get("source"), 60).casefold()
         conversation_id = clean_text(payload.get("conversation_id") or payload.get("id"), 240)
         target_id = clean_text(payload.get("target_id"), 80)
+        if source == "grok" and target_id == "grok-new":
+            return launch_new_cli("grok")
+        if source == "claude" and target_id == "claude-new":
+            return launch_claude_cli(None, "claude-new")
+        if source == "codex" and target_id == "codex-new":
+            return launch_codex_cli()
+        if source == "zcode" and target_id == "zcode-app":
+            return launch_zcode_app()
+        if source in CLIENT_OPEN and target_id in {
+            f"{source}-new",
+            f"{source}-app",
+            f"{source}-client",
+        }:
+            return open_registered_client(source)
         with self._lock:
             item = self._by_key.get((source, conversation_id))
         if not item:
@@ -3704,18 +5011,32 @@ class ConversationIndex:
             values.append(end)
         suffix = f" LIMIT {int(limit)}" if limit else ""
         with readonly_db(HERMES_DB) as conn:
+            columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(messages)")}
+            extra = ", display_kind" if "display_kind" in columns else ", '' AS display_kind"
             rows = conn.execute(
                 f"""
-                SELECT role, content, timestamp FROM messages
+                SELECT role, content, timestamp{extra} FROM messages
                 WHERE {' AND '.join(clauses)}
                 ORDER BY timestamp DESC, id DESC{suffix}
                 """,
                 values,
             ).fetchall()[::-1]
-        return [
-            {"role": row["role"], "text": clean_text(row["content"], 5000), "timestamp": float(row["timestamp"])}
-            for row in rows
-        ]
+        messages = []
+        for row in rows:
+            text = clean_text(row["content"], 5000)
+            if not text:
+                continue
+            role = str(row["role"] or "")
+            visibility = classify_transcript_message(role, text, str(row["display_kind"] or ""))
+            messages.append(
+                {
+                    "role": role,
+                    "text": text,
+                    "timestamp": float(row["timestamp"]),
+                    "visibility": visibility,
+                }
+            )
+        return messages
 
     def _codex_messages(
         self,
@@ -3724,40 +5045,14 @@ class ConversationIndex:
         end: float | None = None,
         limit: int | None = 40,
     ) -> list[dict[str, Any]]:
-        path = Path(rollout_path)
-        if not rollout_path or not path.exists():
-            return []
         messages: list[dict[str, Any]] = []
-        try:
-            with path.open("r", encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if event.get("type") != "response_item":
-                        continue
-                    payload = event.get("payload") or {}
-                    if payload.get("type") != "message" or payload.get("role") not in {"user", "assistant"}:
-                        continue
-                    parts = []
-                    for part in payload.get("content") or []:
-                        if part.get("type") in {"input_text", "output_text"} and part.get("text"):
-                            parts.append(part["text"])
-                    text = clean_text("\n".join(parts), 5000)
-                    if text:
-                        timestamp = event.get("timestamp")
-                        try:
-                            ts = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00")).timestamp()
-                        except (TypeError, ValueError):
-                            ts = 0.0
-                        if start is not None and ts < start:
-                            continue
-                        if end is not None and ts >= end:
-                            continue
-                        messages.append({"role": payload["role"], "text": text, "timestamp": ts})
-        except OSError:
-            return []
+        for message in iter_codex_visible_messages(rollout_path):
+            ts = float(message.get("timestamp") or 0)
+            if start is not None and ts < start:
+                continue
+            if end is not None and ts >= end:
+                continue
+            messages.append(message)
         return messages[-limit:] if limit else messages
 
     def _workbuddy_messages(
@@ -3812,7 +5107,10 @@ class ConversationIndex:
         messages = [
             {
                 "role": str(message.get("role") or ""),
-                "text": clean_text(str(message.get("text") or ""), 5000),
+                "text": clean_text(
+                    readable_turn_text(str(message.get("role") or ""), message.get("text") or ""),
+                    8000,
+                ),
                 "timestamp": float(message.get("timestamp") or 0),
                 "line": int(message.get("line") or 0),
                 "event_id": clean_text(message.get("event_id"), 100),
@@ -4605,11 +5903,13 @@ class ConversationIndex:
         start: float | None = None,
         end: float | None = None,
         limit: int | None = None,
+        include_internal: bool = False,
     ) -> list[dict[str, Any]]:
         cacheable = (
             start is None
             and end is None
             and limit is not None
+            and not include_internal
             and item.source in {"codex", "workbuddy"}
         )
         cache_key = (item.source, item.id, self.refreshed_at)
@@ -4631,13 +5931,32 @@ class ConversationIndex:
         result = []
         for message in messages:
             role = str(message.get("role") or "")
-            text = sanitize_daily_text(message.get("text"), role, 20000)
+            raw_text = readable_turn_text(role, message.get("text") or "")
+            visibility = str(
+                message.get("visibility")
+                or classify_transcript_message(role, raw_text, str(message.get("display_kind") or ""))
+            )
+            if include_internal:
+                text = raw_text if message.get("visibility") else clean_text(raw_text, 8000)
+                if not text:
+                    continue
+                result.append(
+                    {
+                        "role": role,
+                        "text": text,
+                        "timestamp": float(message.get("timestamp") or 0),
+                        "visibility": visibility,
+                    }
+                )
+                continue
+            text = sanitize_daily_text(raw_text, role, 20000)
             if role in {"user", "assistant"} and text:
                 result.append(
                     {
                         "role": role,
                         "text": text,
                         "timestamp": float(message.get("timestamp") or 0),
+                        "visibility": "visible",
                     }
                 )
         if cacheable:
@@ -5352,6 +6671,7 @@ class Handler(BaseHTTPRequestHandler):
                     "parts": WARMUP_STATE["parts"],
                     "errors": WARMUP_STATE["errors"],
                 },
+                "launchers": new_session_targets(),
             })
             return
         if path == "/api/setup/status":
@@ -5467,6 +6787,8 @@ class Handler(BaseHTTPRequestHandler):
             results = []
             for it in result.get("items") or []:
                 snippet = (it.get("match_snippet") or it.get("preview") or "").strip().replace("\n", " ")
+                with INDEX._lock:
+                    live = INDEX._by_key.get((str(it.get("source") or ""), str(it.get("id") or "")))
                 results.append({
                     "source": it.get("source"),
                     "id": it.get("id"),
@@ -5477,6 +6799,7 @@ class Handler(BaseHTTPRequestHandler):
                     "tags": list(it.get("tags") or []),
                     "status": it.get("user_status") or "",
                     "snippet": snippet[:160],
+                    "resume": resume_descriptor(live) if live else {"capability": "none", "exact": False},
                 })
             self._json({
                 "total": result.get("total"),
@@ -5497,6 +6820,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             item = detail["conversation"]
             overview = detail.get("overview") or {}
+            live = Conversation(**{k: item[k] for k in item if k in {f.name for f in fields(Conversation)}}) if isinstance(item, dict) else item
+            resume = resume_descriptor(live) if isinstance(live, Conversation) else {"capability": "none", "exact": False}
             meta = {
                 "source": item.get("source"),
                 "id": item.get("id"),
@@ -5508,10 +6833,15 @@ class Handler(BaseHTTPRequestHandler):
                 "status": item.get("user_status") or "",
                 "favorite": bool(item.get("favorite")),
                 "note": item.get("note") or "",
+                "resume": resume,
             }
             level = (params.get("level") or ["summary"])[0]
             if level != "full":
-                self._json({"meta": meta, "overview": overview})
+                self._json({
+                    "meta": meta,
+                    "overview": overview,
+                    "handoff": build_agent_handoff(live, overview) if isinstance(live, Conversation) else None,
+                })
                 return
             try:
                 budget = min(60000, max(500, int((params.get("budget") or ["8000"])[0])))

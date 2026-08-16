@@ -5,6 +5,7 @@ source-adapter discovery helpers, then shuts the server down. Runs identically
 on Linux / macOS / Windows runners. Exits non-zero on any failure.
 """
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -62,6 +63,19 @@ def main() -> int:
         grok_homes = source_adapters.default_candidates("grok")
         assert grok_homes and grok_homes[0].name == ".grok", grok_homes
         print("PASS: adapter discovery helpers return candidates on", sys.platform)
+
+        node = next((name for name in ("node", "node.exe") if shutil.which(name)), "")
+        if node:
+            markdown = subprocess.run(
+                [node, str(REPO / "tests" / "test_markdown_render.js")],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+            )
+            assert markdown.returncode == 0, markdown.stdout + markdown.stderr
+            print("PASS: markdown renderer", markdown.stdout.strip() or "ok")
+        else:
+            print("SKIP: node not on PATH, markdown renderer test not run")
 
         # macOS 路径形式验证：确认 default_candidates 在 darwin 上走 ~/Library 路径
         if sys.platform == "darwin":

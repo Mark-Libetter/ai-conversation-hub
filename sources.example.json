@@ -52,7 +52,9 @@
     },
     "grok": {
       "enabled": true,
-      "path": ""
+      "path": "",
+      "executable": "",
+      "proxy": ""
     }
   },
   "custom_sources": []
