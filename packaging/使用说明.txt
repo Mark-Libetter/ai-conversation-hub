@@ -38,3 +38,11 @@ AI Conversation Hub · 使用说明
 直接删除解压文件夹即可；如需清理管理数据：
 · Windows：删除 %LOCALAPPDATA%\AIConversationHub 文件夹
 · macOS：删除 ~/Library/Application Support/AIConversationHub 文件夹
+
+五、让 Codex / Grok / Claude 等 Agent 使用本中心（可选）
+· Windows：运行解压目录中的「安装Agent接入.bat」。
+· macOS：运行解压目录中的「install-agent.command」。
+安装助手会自动发现本机对话数据路径，安装 conversation-hub 与 find-agent-data，
+只更新 conversation-hub 自己的 Codex/Grok MCP 配置，并生成 AGENT_USAGE.md。
+AGENT_USAGE.md 位于本机 AI Conversation Hub 用户数据目录，包含这台电脑的绝对路径和使用命令；不要公开上传。
+如果移动了解压目录，请从新位置重新运行 Agent 接入助手，以更新 MCP 的绝对路径。

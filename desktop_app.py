@@ -12,23 +12,29 @@ import urllib.error
 import urllib.request
 import webbrowser
 
-from app_paths import DATA_DIR
+from app_paths import CONFIG_PATH, DATA_DIR
 
 
 INSTANCE_PATH = DATA_DIR / "instance.json"
 
 
-def health(port: int) -> bool:
+def health_payload(port: int) -> dict:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=0.75) as response:
             payload = json.loads(response.read().decode("utf-8"))
-            return (
+            if (
                 response.status == 200
                 and payload.get("app") == "AIConversationHub"
                 and str(payload.get("data_dir", "")).casefold() == str(DATA_DIR).casefold()
-            )
+            ):
+                return payload
     except (OSError, ValueError, urllib.error.URLError):
-        return False
+        pass
+    return {}
+
+
+def health(port: int) -> bool:
+    return bool(health_payload(port))
 
 
 def remembered_port() -> int | None:
@@ -113,11 +119,18 @@ def ensure_firewall_allowed() -> None:
     time.sleep(3)
 
 
-def launch(*, open_browser: bool = True) -> None:
+def ensure_initial_source_config() -> None:
+    if CONFIG_PATH.is_file():
+        return
+    from repair_sources import repair
+
+    repair(apply=True)
+
+
+def ensure_server_started(*, wait_for_index: bool = False) -> tuple[int, threading.Thread | None]:
     from server import run_server
 
-    # 已有实例就复用：先认 instance.json 记住的端口，再扫默认端口段。
-    # 复用时绝不能再起一个 server 去 bind 同一端口（否则 WinError 10048）。
+    ensure_initial_source_config()
     port = remembered_port()
     if not port or not health(port):
         port = running_port()
@@ -125,27 +138,39 @@ def launch(*, open_browser: bool = True) -> None:
     server_thread = None
     if not port:
         port = free_port()
-
-        # 线程内启动 server，不再 spawn 子进程（避免防火墙拦跨进程 TCP）
         server_thread = threading.Thread(
-            target=run_server, args=(port,), kwargs={"open_browser": False},
+            target=run_server,
+            args=(port,),
+            kwargs={"open_browser": False, "enable_tray": False},
             daemon=True,
         )
         server_thread.start()
-
-        # 等待 server 就绪（进程内 loopback 不被防火墙拦）
-        for _ in range(60):
+        for _ in range(120):
             if health(port):
                 break
             if not server_thread.is_alive():
-                raise RuntimeError(
-                    f"服务线程在启动过程中退出（端口 {port}），请查看上方的错误信息。"
-                )
+                raise RuntimeError(f"服务线程在启动过程中退出（端口 {port}）。")
             time.sleep(0.2)
         else:
-            raise RuntimeError("AI 对话中心未能启动，请重新安装或查看日志。")
+            raise RuntimeError("AI 对话中心未能启动。")
+        remember_port(port)
 
-    remember_port(port)
+    if wait_for_index:
+        for _ in range(600):
+            payload = health_payload(port)
+            index = payload.get("index") if isinstance(payload, dict) else {}
+            if isinstance(index, dict) and index.get("ready"):
+                break
+            if isinstance(index, dict) and index.get("status") == "error":
+                raise RuntimeError(str(index.get("error") or "索引初始化失败"))
+            time.sleep(0.2)
+        else:
+            raise RuntimeError("AI 对话中心索引初始化超时。")
+    return port, server_thread
+
+
+def launch(*, open_browser: bool = True) -> None:
+    port, server_thread = ensure_server_started()
     if open_browser:
         webbrowser.open(f"http://127.0.0.1:{port}/")
 

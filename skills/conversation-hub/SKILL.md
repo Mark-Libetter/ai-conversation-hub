@@ -78,6 +78,8 @@ If credentials, network access, merge conflicts, or policy block delivery, keep 
 
 Hub normally runs at `http://127.0.0.1:8765`.
 
+When the installer generated `AGENT_USAGE.md`, read it first and use its exact machine-local command and paths. It normally lives inside the AI Conversation Hub user-data directory (`%LOCALAPPDATA%/AIConversationHub[/UserData]` on Windows or `~/Library/Application Support/AIConversationHub/UserData` on macOS). Do not publish that file because it contains absolute local paths.
+
 ```text
 py -3 hub_agent.py ping
 py -3 hub_agent.py search "关键词" --days 7 --limit 5 --json

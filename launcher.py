@@ -15,7 +15,7 @@ from app_paths import CONFIG_PATH, DATA_DIR
 
 APP_DIR = Path(__file__).resolve().parent
 URL = "http://127.0.0.1:8765/"
-REQUIRED_APP_VERSION = "0.4.0"
+REQUIRED_APP_VERSION = "0.4.1"
 
 
 def process_options(*, detached: bool = False) -> dict:

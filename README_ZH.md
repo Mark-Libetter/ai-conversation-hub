@@ -5,7 +5,7 @@
 > 跨 AI 编程助手的极速本地对话切换台：搜索、定位、继续工作。
 > 本地运行、零第三方依赖、对原始数据只读。
 
-**当前版本：v0.4.0**
+**当前版本：v0.4.1**
 
 ## 这是什么
 
@@ -56,7 +56,24 @@
 - Python 3.10+（仅标准库）
 - Windows / macOS
 
-> ⚠️ **平台说明**：v0.4.0 已在 Windows 做完整本机测试，并由 GitHub CI 验证 Windows、macOS、Linux 源码路径。macOS 安装包可自动构建，但作者仍没有 Mac 真机做人工验收——如果你使用 macOS，欢迎反馈实际运行情况。
+> ⚠️ **平台说明**：v0.4.1 在 Windows 做完整本机测试，并由 GitHub CI 验证 Windows、macOS、Linux 源码路径及 Windows/macOS 最终安装包。macOS 仍没有作者真机人工验收——如果你使用 macOS，欢迎反馈实际运行情况。
+
+### 安装方式 A：对 Agent 说一句话
+
+把下面整句发给拥有终端和文件权限的 Codex、Claude Code、Grok 等 Agent：
+
+> 请打开并严格执行 https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/AGENT_INSTALL.md ，在这台电脑安装 AI Conversation Hub，完成路径发现和 Agent 接入，最后把生成的 AGENT_USAGE.md 路径及有效数据源告诉我。
+
+Agent 会根据 Windows/macOS 和本机是否有 Python/Git 选择安全路径，自动发现本机对话目录、安装 `conversation-hub` 与 `find-agent-data`、幂等登记 Codex/Grok MCP，并生成只属于这台电脑的 `AGENT_USAGE.md`。已有配置和其它 MCP 不会被覆盖。
+
+### 安装方式 B：下载 Release 安装包
+
+从 [GitHub Releases](https://github.com/Mark-Libetter/ai-conversation-hub/releases/latest) 下载并完整解压：
+
+- Windows：双击 `AIConversationHub.exe`；如果还想让 Agent 使用，再运行 `安装Agent接入.bat`。
+- macOS：运行 `start-mac.command` 按图形提示首次打开；如果还想让 Agent 使用，再运行 `install-agent.command`。
+
+Release 自带独立 `AIConversationHubAgent`，不要求另装 Python。两平台成品都会在发布前实际启动并检查健康、14 个数据源以及 Grok/Qoder 恢复模块。
 
 ### 运行
 ```bash
@@ -296,7 +313,9 @@ Python 3.10+（仅标准库，无需 pip install），Windows / macOS；也可�
 
 ```
 server.py           # 后端：HTTP 服务 + 索引 + 搜索 + 每日回顾
-source_adapters.py  # 数据源适配器（内置 13 个 + 自定义源框架）
+source_adapters.py  # 数据源适配器（内置 14 个 + 自定义源框架）
+agent_cli.py         # Agent CLI/MCP 入口（需要时自动启动本地 Hub）
+agent_setup.py       # 自动路径发现、Skill 安装、MCP 登记与使用说明生成
 static/
   app.js            # 前端逻辑
   index.html        # 页面结构
@@ -305,6 +324,7 @@ launcher.py         # 跨平台桌面启动器（起服务+开浏览器）
 desktop_app.py      # 桌面应用壳
 app_paths.py        # 数据/资源目录解析（含 macOS 路径约定）
 repair_sources.py   # 数据源配置修复工具（修复数据源.cmd 是它的 Windows 快捷入口）
+AGENT_INSTALL.md    # 可直接交给 Agent 执行的一句话安装协议
 start-macos.command # macOS 双击启动脚本
 sources.example.json# 数据源配置示例
 ```

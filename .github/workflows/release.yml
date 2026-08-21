@@ -30,7 +30,7 @@ jobs:
           python-version: "3.11"
 
       - name: Byte-compile and validate source
-        run: python -m compileall -q server.py source_adapters.py app_paths.py launcher.py desktop_app.py tray.py repair_sources.py scripts/ci_smoke.py tests skills/conversation-hub/scripts
+        run: python -m compileall -q server.py source_adapters.py app_paths.py launcher.py desktop_app.py agent_cli.py agent_setup.py hub_agent.py tray.py repair_sources.py scripts/ci_smoke.py scripts/frozen_smoke.py tests skills/conversation-hub/scripts
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
@@ -48,16 +48,19 @@ jobs:
         # macOS 加 --windowed 生成 .app bundle（小白可右键→打开放行，无需终端）
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
-            pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --add-data "static${{ matrix.sep }}static" desktop_app.py
+            pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --add-data "static${{ matrix.sep }}static" --add-data "skills${{ matrix.sep }}skills" desktop_app.py
           else
-            pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --icon packaging/app_icon.ico --add-data "static${{ matrix.sep }}static" --add-data "packaging/app_icon.ico${{ matrix.sep }}packaging" --hidden-import tray desktop_app.py
+            pyinstaller --noconfirm --onedir --windowed --name AIConversationHub --icon packaging/app_icon.ico --add-data "static${{ matrix.sep }}static" --add-data "skills${{ matrix.sep }}skills" --add-data "packaging/app_icon.ico${{ matrix.sep }}packaging" --hidden-import tray desktop_app.py
           fi
+          pyinstaller --noconfirm --onedir --console --name AIConversationHubAgent --add-data "static${{ matrix.sep }}static" --add-data "skills${{ matrix.sep }}skills" agent_cli.py
         shell: bash
 
       - name: Bundle launcher and user guide (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: cp "packaging/启动.bat" "packaging/使用说明.txt" "start-tray.vbs" dist/AIConversationHub/
+        run: |
+          cp "packaging/启动.bat" "packaging/安装Agent接入.bat" "packaging/使用说明.txt" "start-tray.vbs" "AGENT_INSTALL.md" "LICENSE" dist/AIConversationHub/
+          cp -R dist/AIConversationHubAgent dist/AIConversationHub/AgentCLI
 
       - name: Bundle launcher and user guide (macOS)
         if: runner.os == 'macOS'
@@ -65,8 +68,17 @@ jobs:
         run: |
           mkdir -p dist/bundle
           cp -R dist/AIConversationHub.app dist/bundle/
-          cp "packaging/start-mac.command" "packaging/使用说明.txt" dist/bundle/
-          chmod +x dist/bundle/start-mac.command
+          cp -R dist/AIConversationHubAgent dist/bundle/AgentCLI
+          cp "packaging/start-mac.command" "packaging/install-agent.command" "packaging/使用说明.txt" "AGENT_INSTALL.md" "LICENSE" dist/bundle/
+          chmod +x dist/bundle/start-mac.command dist/bundle/install-agent.command dist/bundle/AgentCLI/AIConversationHubAgent
+
+      - name: Smoke-test frozen Windows bundle
+        if: runner.os == 'Windows'
+        run: python scripts/frozen_smoke.py --desktop dist/AIConversationHub/AIConversationHub.exe --agent dist/AIConversationHub/AgentCLI/AIConversationHubAgent.exe
+
+      - name: Smoke-test frozen macOS bundle
+        if: runner.os == 'macOS'
+        run: python scripts/frozen_smoke.py --desktop dist/bundle/AIConversationHub.app/Contents/MacOS/AIConversationHub --agent dist/bundle/AgentCLI/AIConversationHubAgent
 
       - name: Zip the bundle (Windows)
         if: runner.os == 'Windows'
@@ -105,11 +117,12 @@ jobs:
           body: |
             把 Codex、Claude Code、Hermes、Grok Build、Qoder、QoderWork、WorkBuddy 等 14 类 AI 助手对话汇聚成一个可搜索的本地时间线。一键下载、解压即用，无需安装 Python。
 
-            ## v0.4.0 亮点
+            ## ${{ github.ref_name }} 亮点
             - 长对话阅读模式、Markdown/表格/任务列表渲染、目录和正文内搜索
             - 自动折叠系统消息、压缩记录和内部进度噪音，同时保留完整原文入口
             - 更诚实的精确会话、命令、工作区和客户端续接能力分级
-            - 14 个内置适配器、可选本地记忆插件，以及 `find-agent-data` / `conversation-hub` 两个开源 Skill
+            - 14 个内置适配器，修复 Grok/Qoder 恢复层在安装包中的漏包问题
+            - 同时提供普通桌面安装与 Agent 接入助手；自动发现路径并生成本机使用说明
 
             ---
 
@@ -119,6 +132,8 @@ jobs:
             |---|---|---|
             | `AIConversationHub-Windows.zip` | Windows | 解压后双击 `AIConversationHub.exe` 即可 |
             | `AIConversationHub-macOS.zip` | macOS | 解压后见下方说明 |
+
+            如果希望 Codex、Grok、Claude 等 Agent 直接使用 Hub：Windows 运行 `安装Agent接入.bat`，macOS 运行 `install-agent.command`。安装器会自动发现本机路径、安装两个 Skill，并生成 `AGENT_USAGE.md`。
 
             ## Windows 安装
             1. 把 zip **完整解压**到一个文件夹（不要在压缩包里直接双击！）

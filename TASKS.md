@@ -6,6 +6,7 @@
 |---|---|---|---|---|---|
 | T-001 | 整理当前 v0.4.0 工作区，建立项目接力合同并推送开发分支 | done | primary Codex integrator | 无 | [handoffs/T-001.md](handoffs/T-001.md) |
 | T-002 | 审查开发分支、强化项目合同生命周期并发布 v0.4.0 | done | primary Codex integrator | T-001 | [handoffs/T-002.md](handoffs/T-002.md) |
+| T-003 | 修复打包漏项，交付双安装方案并发布 v0.4.1 | review | primary Codex integrator | T-002 | [handoffs/T-003.md](handoffs/T-003.md) |
 
 ## 执行纪律
 
