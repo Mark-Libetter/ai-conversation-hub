@@ -6,6 +6,7 @@ on Linux / macOS / Windows runners. Exits non-zero on any failure.
 """
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -13,7 +14,15 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-PORT = int(os.environ.get("HUB_CI_PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8765))
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+PORT = int(os.environ.get("HUB_CI_PORT") or (sys.argv[1] if len(sys.argv) > 1 else free_port()))
 
 
 def health() -> dict | None:
@@ -53,6 +62,7 @@ def main() -> int:
             print("FAIL: server did not become healthy")
             return 1
         assert payload["index"]["status"] == "ready", payload["index"]
+        assert Path(payload["data_dir"]).resolve() == Path(data_dir).resolve(), payload["data_dir"]
         print("PASS: /api/health ->", payload.get("app"), payload.get("platform"))
 
         sys.path.insert(0, str(REPO))

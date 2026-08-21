@@ -37,6 +37,7 @@
 | **P0** | Qoder 新版标题索引 + 明文 transcript 回顾卡；EXE 内置动态端口托盘与统一退出 | ✅ 已交付（v0.4.0） |
 | **P0** | 共享恢复层 `agent_recovery`：Hub 与 find-agent-data skill 共用 Qoder 映射 | ✅ 已交付 |
 | **P0** | 托盘保活、诚实续接 capability、Agent handoff JSON、conversation-hub skill | ✅ 已交付 |
+| **P0** | v0.4.1 双安装入口：Agent 一句话安装 + 经成品冒烟的 Windows/macOS Release | ✅ 已交付 |
 | **P1** | 对话预蒸馏摘要（规则版优先；模型 API 做成可选增强，默认关闭、不填 key 即不存在） | ⏸ 观察真实使用后再决定 |
 | **P1** | 版本化压缩链、候选记忆建议与跨 Agent 导出器 | ⏸ 冻结 |
 | **P2** | 向量检索、图记忆、自动长期记忆、跨设备同步 | ⏸ 冻结（隐私和误记忆风险高） |

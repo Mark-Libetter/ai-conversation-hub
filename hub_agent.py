@@ -41,7 +41,7 @@ PORT = os.environ.get("CONVERSATION_HUB_PORT", "8765")
 BASE = f"http://127.0.0.1:{PORT}"
 
 # 与 server.py 的 APP_VERSION 保持一致（手动同步：单点定义，避免散落多处写死）
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 
 # ---------------------------------------------------------------- HTTP 层
@@ -162,14 +162,15 @@ MCP_TOOLS = [
     {
         "name": "hub_search",
         "description": (
-            "在本机所有 AI 编程助手（Codex/Claude Code/Hermes/ZCode/QoderWork/WorkBuddy）"
+            "在本机已启用的 14 类 AI 编程助手来源（包括 Codex/Claude Code/Hermes/"
+            "Grok Build/Qoder/QoderWork/WorkBuddy 等）"
             "的历史对话中做布尔全文检索。支持 AND/OR/NOT、\"短语\"、括号、中英文连写。"
             "返回紧凑结果（标题/时间/摘要/ID）。查其它 agent 做过什么、怎么解决的，先用这个。"),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "q": {"type": "string", "description": "检索式，如：调试API OR 登录"},
-                "source": {"type": "string", "description": "限定来源：codex/claude/hermes/zcode/qoderwork/workbuddy，默认 all"},
+                "source": {"type": "string", "description": "限定来源 ID（如 codex/grok/qoder/qodercn/claude/hermes），默认 all"},
                 "days": {"type": "string", "description": "限定最近 N 天：1/3/7/30，留空为全部"},
                 "tag": {"type": "string", "description": "按标签过滤"},
                 "limit": {"type": "number", "description": "返回条数，默认 10，最大 50"},

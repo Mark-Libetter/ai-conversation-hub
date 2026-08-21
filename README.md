@@ -5,7 +5,7 @@
 > An instant local conversation switchboard for AI coding assistants: search, locate, continue.
 > Local-first, zero dependencies, read-only to your original data.
 
-**Current version: v0.4.0**
+**Current version: v0.4.1**
 
 ## What it does
 
@@ -56,7 +56,24 @@ As a side note, this is the author's first vibe coding project. Bug reports are 
 - Python 3.10+ (standard library only)
 - Windows / macOS
 
-> ⚠️ **Platform note**: v0.4.0 has completed full local Windows testing, while GitHub CI verifies the Windows, macOS, and Linux source paths. The macOS package is built automatically but has not received author-owned real-device acceptance because the author does not have a Mac; field reports are welcome.
+> ⚠️ **Platform note**: v0.4.1 receives full local Windows testing plus GitHub CI for Windows, macOS, Linux, and the final frozen Windows/macOS bundles. The author still does not have a Mac for real-device acceptance; field reports remain welcome.
+
+### Install A: ask an Agent in one sentence
+
+Send this entire sentence to a Codex, Claude Code, Grok, or other Agent that has terminal and file access:
+
+> Open and follow https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/AGENT_INSTALL.md exactly. Install AI Conversation Hub on this computer, discover local paths, configure Agent access, then report the generated AGENT_USAGE.md path and valid sources.
+
+The Agent selects the safe Windows/macOS path, discovers local conversation stores, installs `conversation-hub` and `find-agent-data`, idempotently registers the Codex/Grok MCP block, and generates a machine-specific `AGENT_USAGE.md`. Existing configuration and unrelated MCP servers are preserved.
+
+### Install B: download a Release bundle
+
+Download and fully extract the matching asset from [GitHub Releases](https://github.com/Mark-Libetter/ai-conversation-hub/releases/latest):
+
+- Windows: run `AIConversationHub.exe`; optionally run `安装Agent接入.bat` for Agent access.
+- macOS: run `start-mac.command` and follow the first-run prompts; optionally run `install-agent.command` for Agent access.
+
+The Release includes a standalone `AIConversationHubAgent`, so Python is not required. CI starts each final Windows/macOS bundle and verifies health, all 14 source entries, Agent CLI, and the Grok/Qoder recovery layer before publication.
 
 ### Run
 ```bash
@@ -262,7 +279,7 @@ L2 summary-level (conversation overview, cheap) → L3 full-text (`budget` contr
 When you use several AI coding assistants (Codex CLI, Claude Code, Hermes, ZCode, etc.), each stores its conversation logs in a separate directory, with no shared place to search, review, or build on them. The Hub brings them into one local workspace: cross-agent search, daily work review, project memory, tags/favorites, and Markdown export — so the work you do across assistants doesn't stay scattered and forgotten.
 
 **Which AI coding assistants are supported?**
-13 built-in adapters: Codex, Claude Code, Hermes, WorkBuddy, Cursor, QClaw, ZCode, QoderWork, Qoder, QoderCN, QwenWorkCN CLI, CodePilot, and Marvis. Other agents can be connected via JSONL / Markdown / SQLite custom sources.
+14 built-in adapters: Codex, Claude Code, Hermes, WorkBuddy, Grok Build, Cursor, QClaw, ZCode, QoderWork, Qoder, QoderCN, QwenWorkCN CLI, CodePilot, and Marvis. Other agents can be connected via JSONL / Markdown / SQLite custom sources.
 
 **How do I search all AI conversations on my machine?**
 After launching, type keywords in the search box. Supports AND / OR / NOT, `"exact phrases"`, parentheses, and mixed CJK/Latin; filter by agent, time range, status, and tags. Select conversations to batch-export Markdown / JSONL or add to a project.
@@ -281,7 +298,9 @@ Python 3.10+ (standard library only, no `pip install`), Windows / macOS; or just
 
 ```
 server.py           # Backend: HTTP server + indexing + search + daily review
-source_adapters.py  # Data source adapters (13 built-in + custom source framework)
+source_adapters.py  # Data source adapters (14 built-in + custom source framework)
+agent_cli.py         # Agent CLI/MCP entry; starts the local Hub when needed
+agent_setup.py       # Path discovery, Skill install, MCP registration, usage guide
 static/
   app.js            # Frontend logic
   index.html        # Page structure
@@ -290,6 +309,7 @@ launcher.py         # Cross-platform desktop launcher (starts server + opens bro
 desktop_app.py      # Desktop app shell
 app_paths.py        # Data/asset path resolution (incl. macOS path conventions)
 repair_sources.py   # Data source repair tool (修复数据源.cmd is its Windows shortcut)
+AGENT_INSTALL.md    # One-sentence installation protocol for an Agent
 start-macos.command # macOS double-click launch script
 sources.example.json# Data source config example
 ```
