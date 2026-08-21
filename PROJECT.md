@@ -6,7 +6,7 @@
 
 ## 当前阶段
 
-`v0.4.1` 宣发前安装适配收口。当前补齐 WorkBuddy、千问办公与 Qoder/QoderCN 的一句话安装路由，并保持 README 中英文能力表与真实验证级别一致。
+`v0.4.1` 宣发准备阶段。`main` 已补齐 WorkBuddy、千问办公、Qoder/QoderCN 与 QoderWork 的一句话安装路由；本次只更新主线源码和双语说明，未创建新 Release。
 
 ## 范围
 
