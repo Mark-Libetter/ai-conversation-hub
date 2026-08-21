@@ -64,7 +64,18 @@ Send this entire sentence to a Codex, Claude Code, Grok, or other Agent that has
 
 > Open and follow https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/AGENT_INSTALL.md exactly. Install AI Conversation Hub on this computer, discover local paths, configure Agent access, then report the generated AGENT_USAGE.md path and valid sources.
 
-The Agent selects the safe Windows/macOS path, discovers local conversation stores, installs `conversation-hub` and `find-agent-data`, idempotently registers the Codex/Grok MCP block, and generates a machine-specific `AGENT_USAGE.md`. Existing configuration and unrelated MCP servers are preserved.
+The Agent selects the safe Windows/macOS path, discovers local conversation stores, installs `conversation-hub` and `find-agent-data`, idempotently registers Codex/Grok/WorkBuddy/Qoder MCP entries, and generates a machine-specific `AGENT_USAGE.md`. Existing configuration and unrelated MCP servers are preserved.
+
+Domestic Agent routing for the one-sentence installer:
+
+| Agent | Skill installation | MCP / invocation |
+|---|---:|---|
+| WorkBuddy | ✅ `~/.workbuddy/skills` | ✅ merges `~/.workbuddy/mcp.json` |
+| QwenWorkCN | ✅ `~/.qwenworkcn/skills` | add/update through QwenWork's built-in settings tools when available; otherwise use the generated CLI |
+| Qoder / QoderCN | ✅ `~/.qoder/skills` / `~/.qoder-cn/skills` | ✅ merges each user-level `mcp.json` |
+| QoderWork | ✅ official `~/.qoderwork/skills` | generated Agent CLI fallback; no guessed private MCP file |
+
+Product-specific paths are written only when that product is detected. Qoder's user-level Skill and MCP capabilities are documented in its official [Skills](https://docs.qoder.com/extensions/skills) and [MCP](https://docs.qoder.com/cli/mcp-servers) guides; QoderWork documents its Skill path in the official [QoderWork Skills guide](https://docs.qoder.com/qoderwork/skills).
 
 ### Install B: download a Release bundle
 

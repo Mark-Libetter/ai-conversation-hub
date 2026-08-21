@@ -64,7 +64,18 @@
 
 > 请打开并严格执行 https://raw.githubusercontent.com/Mark-Libetter/ai-conversation-hub/main/AGENT_INSTALL.md ，在这台电脑安装 AI Conversation Hub，完成路径发现和 Agent 接入，最后把生成的 AGENT_USAGE.md 路径及有效数据源告诉我。
 
-Agent 会根据 Windows/macOS 和本机是否有 Python/Git 选择安全路径，自动发现本机对话目录、安装 `conversation-hub` 与 `find-agent-data`、幂等登记 Codex/Grok MCP，并生成只属于这台电脑的 `AGENT_USAGE.md`。已有配置和其它 MCP 不会被覆盖。
+Agent 会根据 Windows/macOS 和本机是否有 Python/Git 选择安全路径，自动发现本机对话目录、安装 `conversation-hub` 与 `find-agent-data`、幂等登记 Codex/Grok/WorkBuddy/Qoder MCP，并生成只属于这台电脑的 `AGENT_USAGE.md`。已有配置和其它 MCP 不会被覆盖。
+
+国内 Agent 的一句话安装适配：
+
+| Agent | 自动安装 Skill | MCP/调用方式 |
+|---|---:|---|
+| WorkBuddy | ✅ `~/.workbuddy/skills` | ✅ 合并 `~/.workbuddy/mcp.json` |
+| 千问办公 CLI | ✅ `~/.qwenworkcn/skills` | 当前 Agent 有千问内置设置工具时自动 add/update；否则使用生成的 CLI |
+| Qoder / QoderCN | ✅ `~/.qoder/skills` / `~/.qoder-cn/skills` | ✅ 合并各自用户级 `mcp.json` |
+| QoderWork / 千问办公桌面 | ✅ 官方 `~/.qoderwork/skills` | 使用生成的 Agent CLI；不猜写未验证的私有 MCP |
+
+只有检测到相应产品时才写入其目录。Qoder 的用户级 Skill 路径与 MCP 能力参考[官方 Skills 文档](https://docs.qoder.com/extensions/skills)和[官方 MCP 文档](https://docs.qoder.com/cli/mcp-servers)；QoderWork Skill 路径参考[官方说明](https://docs.qoder.com/qoderwork/skills)。
 
 ### 安装方式 B：下载 Release 安装包
 

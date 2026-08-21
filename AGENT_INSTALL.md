@@ -31,6 +31,11 @@ The user has authorized installing AI Conversation Hub on this computer. Complet
 ## Verify and report
 
 1. Read the generated `AGENT_USAGE.md` completely.
-2. Run the exact `ping` command written there. It may start the local-only Hub automatically.
-3. Confirm the Hub binds only to `127.0.0.1`, report which sources are valid, and tell the user to restart Codex/Grok so their MCP configuration reloads.
-4. If an expected source is missing, report the detected path/status and let the user choose whether to provide an additional search root. Do not crawl unrelated disks automatically.
+2. Inspect `domestic_agents` in the installer JSON result:
+   - WorkBuddy: when detected, verify both Skills under `~/.workbuddy/skills` and the merged `conversation-hub` entry in `~/.workbuddy/mcp.json`.
+   - QwenWorkCN/千问办公 CLI: verify both Skills under `~/.qwenworkcn/skills`. If the current Agent exposes `mcp__qw-builtin__qw_query` and `mcp__qw-builtin__qw_action`, query `qwenwork.settings.connector.custom.conversation-hub`; add or update it using the returned `qwenwork_mcp_action.params.config`. Do not edit `mcp-adaptor.config` directly.
+   - Qoder/QoderCN: when detected, verify both Skills under `~/.qoder/skills` or `~/.qoder-cn/skills` and the merged `conversation-hub` entry in that product's `mcp.json`.
+   - QoderWork/千问办公桌面: verify both Skills under `~/.qoderwork/skills`; use the generated Agent CLI command because no stable external MCP file was verified.
+3. Run the exact `ping` command written in `AGENT_USAGE.md`. It may start the local-only Hub automatically.
+4. Confirm the Hub binds only to `127.0.0.1`, report which sources are valid, and tell the user to restart the detected Agents so Skill/MCP configuration reloads.
+5. If an expected source is missing, report the detected path/status and let the user choose whether to provide an additional search root. Do not crawl unrelated disks automatically.
