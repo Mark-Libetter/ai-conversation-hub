@@ -17,6 +17,13 @@ from repair_sources import repair, source_status
 
 
 SKILL_NAMES = ("conversation-hub", "find-agent-data")
+DOMESTIC_LABELS = {
+    "workbuddy": "WorkBuddy",
+    "qwenworkcn": "千问办公 CLI / QwenWorkCN",
+    "qoder": "Qoder",
+    "qodercn": "QoderCN",
+    "qoderwork": "QoderWork / 千问办公桌面",
+}
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -63,6 +70,26 @@ def upsert_mcp_config(path: Path, command: Path, args: list[str], *, enabled: bo
     atomic_write_text(path, updated)
 
 
+def upsert_json_mcp(path: Path, command: Path, args: list[str]) -> None:
+    if path.is_file():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"MCP config root must be an object: {path}")
+    else:
+        data = {}
+    servers = data.get("mcpServers")
+    if servers is None:
+        servers = {}
+    if not isinstance(servers, dict):
+        raise ValueError(f"mcpServers must be an object: {path}")
+    servers["conversation-hub"] = {
+        "command": str(command).replace("\\", "/"),
+        "args": list(args),
+    }
+    data["mcpServers"] = servers
+    atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
 def sync_skill(source: Path, target: Path) -> None:
     for item in source.rglob("*"):
         relative = item.relative_to(source)
@@ -89,18 +116,67 @@ def sync_skill(source: Path, target: Path) -> None:
                 pass
 
 
-def install_skills(resource_dir: Path, home: Path) -> list[Path]:
+def application_support_dir(home: Path) -> Path:
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support"
+    return Path(os.environ.get("APPDATA") or (home / "AppData" / "Roaming"))
+
+
+def domestic_agent_specs(
+    home: Path, *, app_support: Path | None = None
+) -> list[dict[str, Any]]:
+    support = (app_support or application_support_dir(home)).resolve()
+    qoderwork_apps = tuple(
+        support / name for name in ("QoderWork CN", "QoderWork", "QwenWorkCN", "QwenWork")
+    )
+    raw = (
+        ("workbuddy", home / ".workbuddy", home / ".workbuddy" / "skills", home / ".workbuddy" / "mcp.json", "json"),
+        ("qwenworkcn", home / ".qwenworkcn", home / ".qwenworkcn" / "skills", None, "qwen_builtin_action"),
+        ("qoder", home / ".qoder", home / ".qoder" / "skills", home / ".qoder" / "mcp.json", "json"),
+        ("qodercn", home / ".qoder-cn", home / ".qoder-cn" / "skills", home / ".qoder-cn" / "mcp.json", "json"),
+    )
+    specs = [
+        {
+            "id": agent_id,
+            "label": DOMESTIC_LABELS[agent_id],
+            "detected": root.exists(),
+            "root": root,
+            "skill_root": skill_root,
+            "mcp_path": mcp_path,
+            "mcp_mode": mcp_mode,
+        }
+        for agent_id, root, skill_root, mcp_path, mcp_mode in raw
+    ]
+    qoderwork_root = home / ".qoderwork"
+    specs.append(
+        {
+            "id": "qoderwork",
+            "label": DOMESTIC_LABELS["qoderwork"],
+            "detected": qoderwork_root.exists() or any(path.exists() for path in qoderwork_apps),
+            "root": qoderwork_root,
+            "skill_root": qoderwork_root / "skills",
+            "mcp_path": None,
+            "mcp_mode": "cli_fallback",
+        }
+    )
+    return specs
+
+
+def install_skills(
+    resource_dir: Path, home: Path, *, extra_roots: list[Path] | None = None
+) -> list[Path]:
     installed: list[Path] = []
     roots = (
         home / ".agents" / "skills",
         home / ".grok" / "skills",
         home / ".claude" / "skills",
     )
+    all_roots = [*roots, *(extra_roots or [])]
     for name in SKILL_NAMES:
         source = resource_dir / "skills" / name
         if not (source / "SKILL.md").is_file():
             raise FileNotFoundError(f"missing bundled skill: {source}")
-        for root in roots:
+        for root in all_roots:
             target = root / name
             sync_skill(source, target)
             installed.append(target)
@@ -128,6 +204,8 @@ def render_usage(
     data_dir: Path,
     statuses: dict[str, dict[str, Any]],
     installed_skills: list[Path],
+    domestic_agents: list[dict[str, Any]],
+    qwenwork_mcp_action: dict[str, Any],
 ) -> str:
     base = [str(command), *prefix_args]
     source_rows = []
@@ -136,6 +214,14 @@ def render_usage(
         valid = "是 / yes" if item.get("valid") else "否 / no"
         source_rows.append(f"| `{name}` | {valid} | `{path}` |")
     skills = "\n".join(f"- `{path}`" for path in installed_skills)
+    domestic_rows = []
+    for item in domestic_agents:
+        detected = "是 / yes" if item["detected"] else "否 / no"
+        skill = str(item.get("skill_path") or "—")
+        mcp = str(item.get("mcp_status") or "CLI fallback")
+        domestic_rows.append(
+            f"| {item['label']} | {detected} | `{skill}` | {mcp} |"
+        )
     return f"""# AI Conversation Hub · Agent 使用说明
 
 本文件由本机安装器生成。它记录的是这台电脑的实际路径；不要把它公开上传。
@@ -166,6 +252,18 @@ CLI 会在需要时自动启动只监听 `127.0.0.1` 的 Hub；不会写回任�
 {format_command([*base, 'show', '<source>', '<conversation_id>', '--level', 'summary', '--json'])}
 {format_command([*base, 'handoff', '<source>', '<conversation_id>', '--json'])}
 {format_command([*base, 'daily'])}
+```
+
+## 国内 Agent 一句话安装结果
+
+| Agent | 已检测 | Skill 路径 | MCP/回退 |
+|---|---:|---|---|
+{chr(10).join(domestic_rows)}
+
+千问办公的自定义 MCP 由产品内置设置动作管理。若当前 Agent 提供 `mcp__qw-builtin__qw_action`，可在用户已授权本次安装的前提下调用：
+
+```json
+{json.dumps(qwenwork_mcp_action, ensure_ascii=False, indent=2)}
 ```
 
 Codex 与 Grok 的 MCP 配置已登记为：
@@ -204,6 +302,7 @@ def run_setup(
     prefix_args: list[str] | None = None,
     discover_sources: bool = True,
     register_mcp: bool = True,
+    application_support: Path | None = None,
 ) -> dict[str, Any]:
     target_home = (home or Path.home()).resolve()
     resources = (resource_dir or RESOURCE_DIR).resolve()
@@ -214,7 +313,15 @@ def run_setup(
 
     config = repair(apply=True) if discover_sources else {}
     statuses = source_status(config if config else None)
-    installed = install_skills(resources, target_home)
+    domestic_specs = domestic_agent_specs(
+        target_home, app_support=application_support
+    )
+    domestic_skill_roots = [
+        item["skill_root"] for item in domestic_specs if item["detected"]
+    ]
+    installed = install_skills(
+        resources, target_home, extra_roots=domestic_skill_roots
+    )
     config_files: list[Path] = []
     if register_mcp:
         codex = target_home / ".codex" / "config.toml"
@@ -222,6 +329,46 @@ def run_setup(
         upsert_mcp_config(codex, agent_command, [*agent_prefix, "mcp"], enabled=False)
         upsert_mcp_config(grok, agent_command, [*agent_prefix, "mcp"], enabled=True)
         config_files.extend((codex, grok))
+
+    domestic_results: list[dict[str, Any]] = []
+    for item in domestic_specs:
+        skill_path = item["skill_root"] / "conversation-hub" if item["detected"] else None
+        mcp_status = "not detected"
+        mcp_path = item.get("mcp_path")
+        if item["detected"] and register_mcp and item["mcp_mode"] == "json" and mcp_path:
+            upsert_json_mcp(
+                mcp_path, agent_command, [*agent_prefix, "mcp"]
+            )
+            config_files.append(mcp_path)
+            mcp_status = f"registered: {mcp_path}"
+        elif item["detected"] and item["mcp_mode"] == "qwen_builtin_action":
+            mcp_status = "manual via qwenwork.settings.connector.custom"
+        elif item["detected"]:
+            mcp_status = "Agent CLI fallback"
+        domestic_results.append(
+            {
+                "id": item["id"],
+                "label": item["label"],
+                "detected": bool(item["detected"]),
+                "skill_path": str(skill_path) if skill_path else "",
+                "skill_installed": bool(skill_path and (skill_path / "SKILL.md").is_file()),
+                "mcp_mode": item["mcp_mode"],
+                "mcp_status": mcp_status,
+                "mcp_path": str(mcp_path) if mcp_path else "",
+            }
+        )
+
+    qwenwork_mcp_action = {
+        "key": "qwenwork.settings.connector.custom",
+        "action": "add",
+        "params": {
+            "name": "conversation-hub",
+            "config": {
+                "command": str(agent_command),
+                "args": [*agent_prefix, "mcp"],
+            },
+        },
+    }
 
     usage_path = target_data / "AGENT_USAGE.md"
     atomic_write_text(
@@ -233,6 +380,8 @@ def run_setup(
             data_dir=target_data,
             statuses=statuses,
             installed_skills=installed,
+            domestic_agents=domestic_results,
+            qwenwork_mcp_action=qwenwork_mcp_action,
         ),
     )
     hermes_hint = write_hermes_hint(target_home, usage_path)
@@ -244,6 +393,8 @@ def run_setup(
         "agent_command": [str(agent_command), *agent_prefix],
         "skills": [str(path) for path in installed],
         "mcp_configs": [str(path) for path in config_files],
+        "domestic_agents": domestic_results,
+        "qwenwork_mcp_action": qwenwork_mcp_action,
         "hermes_hint": str(hermes_hint),
         "sources": statuses,
     }

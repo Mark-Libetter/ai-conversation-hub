@@ -99,6 +99,70 @@ class AgentSetupTests(unittest.TestCase):
             self.assertIn("[projects.demo]", text)
             self.assertIn('command = "/opt/hub/agent"', text)
 
+    def test_domestic_agents_get_verified_skills_and_safe_mcp_routes(self) -> None:
+        agent_setup = load_agent_setup()
+        with tempfile.TemporaryDirectory(prefix="hub-domestic-setup-") as directory:
+            root = Path(directory)
+            home = root / "home"
+            data = root / "data"
+            app_support = root / "app-support"
+            resources = self.make_resources(root)
+            for name in (".workbuddy", ".qwenworkcn", ".qoder", ".qoder-cn"):
+                (home / name).mkdir(parents=True)
+            (app_support / "QoderWork CN").mkdir(parents=True)
+            workbuddy_mcp = home / ".workbuddy" / "mcp.json"
+            workbuddy_mcp.write_text(
+                '{"mcpServers":{"other":{"command":"other","args":[]}}}\n',
+                encoding="utf-8",
+            )
+            statuses = {"codex": {"valid": False, "path": "", "conversations": 0}}
+            with mock.patch.object(agent_setup, "repair", return_value={}), mock.patch.object(
+                agent_setup, "source_status", return_value=statuses
+            ):
+                first = agent_setup.run_setup(
+                    home=home,
+                    resource_dir=resources,
+                    data_dir=data,
+                    command=Path("/opt/AIConversationHubAgent"),
+                    prefix_args=[],
+                    application_support=app_support,
+                )
+                second = agent_setup.run_setup(
+                    home=home,
+                    resource_dir=resources,
+                    data_dir=data,
+                    command=Path("/opt/AIConversationHubAgent"),
+                    prefix_args=[],
+                    application_support=app_support,
+                )
+
+            self.assertEqual(16, len(first["skills"]))
+            agents = {item["id"]: item for item in second["domestic_agents"]}
+            self.assertEqual(
+                {"workbuddy", "qwenworkcn", "qoder", "qodercn", "qoderwork"},
+                set(agents),
+            )
+            self.assertTrue(all(item["detected"] for item in agents.values()))
+            self.assertTrue(all(item["skill_installed"] for item in agents.values()))
+            self.assertEqual("qwen_builtin_action", agents["qwenworkcn"]["mcp_mode"])
+            self.assertEqual("cli_fallback", agents["qoderwork"]["mcp_mode"])
+            for agent_id in ("workbuddy", "qoder", "qodercn"):
+                config_path = Path(agents[agent_id]["mcp_path"])
+                payload = __import__("json").loads(config_path.read_text(encoding="utf-8"))
+                self.assertIn("conversation-hub", payload["mcpServers"])
+                self.assertEqual(1, list(payload["mcpServers"]).count("conversation-hub"))
+            workbuddy_payload = __import__("json").loads(
+                workbuddy_mcp.read_text(encoding="utf-8")
+            )
+            self.assertIn("other", workbuddy_payload["mcpServers"])
+            self.assertEqual(
+                "qwenwork.settings.connector.custom",
+                second["qwenwork_mcp_action"]["key"],
+            )
+            usage = (data / "AGENT_USAGE.md").read_text(encoding="utf-8")
+            for label in agent_setup.DOMESTIC_LABELS.values():
+                self.assertIn(label, usage)
+
 
 if __name__ == "__main__":
     unittest.main()
